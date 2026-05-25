@@ -24,3 +24,82 @@ export const oauthAccounts = pgTable(
     pk: primaryKey({ columns: [t.userId, t.provider] }),
   }),
 );
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  boardId: text("board_id").notNull(),
+  sprintId: text("sprint_id").notNull(),
+  sprintName: text("sprint_name").notNull(),
+  status: text("status").notNull().default("active"), // 'active' | 'ended'
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  teamId: uuid("team_id"), // v3 placeholder
+});
+
+export const sessionMembers = pgTable(
+  "session_members",
+  {
+    sessionId: uuid("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    role: text("role").notNull(), // 'moderator' | 'voter'
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.sessionId, t.userId] }) }),
+);
+
+export const issues = pgTable(
+  "issues",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    youtrackIssueId: text("youtrack_issue_id").notNull(),
+    issueKey: text("issue_key").notNull(),
+    summary: text("summary").notNull(),
+    description: text("description"),
+    position: integer("position").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    teamId: uuid("team_id"), // v3 placeholder
+  },
+  (t) => ({
+    uniqInSession: uniqueIndex("issues_session_yt_uniq").on(t.sessionId, t.youtrackIssueId),
+    bySession: index("issues_session_idx").on(t.sessionId),
+  }),
+);
+
+export const estimates = pgTable("estimates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  issueId: uuid("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // 'sp' | 'duration'
+  phase: text("phase"), // null for sp; 'impl' | 'review' | 'test'
+  round: integer("round").notNull().default(1),
+  finalValue: numeric("final_value"),
+  decidedBy: uuid("decided_by").references(() => users.id),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+});
+
+export const votes = pgTable(
+  "votes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    estimateId: uuid("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    value: numeric("value").notNull(),
+    castAt: timestamp("cast_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqUserPerEstimate: uniqueIndex("votes_estimate_user_uniq").on(t.estimateId, t.userId),
+  }),
+);
+
+export const youtrackPosts = pgTable("youtrack_posts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  issueId: uuid("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // 'sp_field' | 'duration_field' | 'comment'
+  requestPayload: jsonb("request_payload").notNull(),
+  responsePayload: jsonb("response_payload"),
+  status: text("status").notNull(), // 'success' | 'failed'
+  attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
+});
