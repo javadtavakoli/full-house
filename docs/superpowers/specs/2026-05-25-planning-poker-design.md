@@ -322,6 +322,39 @@ Stated explicitly so we don't drift:
 - Self-hosted YouTrack support (cloud only).
 - T-shirt-size or custom SP scales (pure Fibonacci only).
 - Configurable duration deck (1h / 2h / 4h / 8h / 16h / 24h, fixed).
+- Capacity-aware assignment of reviewer / assignee (v2 — see §13).
+
+## 13. v2 roadmap (notes, not designs)
+
+These are captured here so v1 schema and integration choices don't paint us into a corner. Each gets its own design pass when prioritized.
+
+### 13.1 Capacity-aware reviewer / assignee assignment
+
+After the session has settled SP and per-phase duration estimates, the moderator should be able to assign an **assignee** (responsible for `impl`) and a **reviewer** (responsible for `review`) to each issue — with the app suggesting candidates that actually fit the sprint.
+
+The suggestion engine needs three inputs:
+
+1. **Sprint working days** — start/end of the sprint minus weekends, holidays, and individual time-off. YouTrack agile boards expose sprint start/finish; holidays/time-off need either a new input UI or a YouTrack field convention to read from.
+2. **Per-person capacity** — a configured % (e.g. 70%) of working hours each member can spend on sprint work (the rest goes to meetings, support, etc.). Stored in a new `user_capacities` table keyed by `(user_id, sprint_id)` with a per-user default that's editable per sprint.
+3. **Estimated time per role** — already in `estimates`: `impl` hours feed the assignee's load, `review` hours feed the reviewer's load. Test phase is unassigned in v2 (could become `tester` in v3).
+
+The UI shows, for the currently selected issue, each candidate with their **remaining capacity** (`(working_hours × capacity%) − sum of impl/review already assigned to them this sprint`). Negative numbers are highlighted red. Picking an assignee/reviewer writes back to YouTrack's Assignee field (and a new "Reviewer" custom field — `YT_REVIEWER_FIELD` env var).
+
+**Schema additions this will need (heads-up, not v1 work):**
+
+```
+user_capacities       (user_id, sprint_id, capacity_pct, hours_off, notes)
+issue_assignments     (issue_id, role 'assignee'|'reviewer', user_id, assigned_at, assigned_by)
+sprint_calendar       (sprint_id, working_days int, holidays jsonb)
+```
+
+**Open questions to resolve when v2 starts:**
+
+- Where do holidays and individual time-off come from? (Manual UI? YouTrack time-tracking? Calendar integration?)
+- Does the suggestion engine optimize globally (Hungarian algorithm across all issues) or greedily (issue-at-a-time)? Greedy is simpler and matches the moderator's mental model; global is more accurate.
+- How is "remaining capacity" affected by issues outside the current session that are already in the sprint? (Read existing YouTrack assignments at session start; treat as fixed load.)
+
+## 14. Environment variables
 
 ## 13. Environment variables
 
