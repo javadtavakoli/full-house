@@ -317,12 +317,13 @@ Stated explicitly so we don't drift:
 - Past-sessions history UI (sessions stored, no list/detail screen).
 - Estimated-vs-actual analytics.
 - Push notifications.
-- Multi-tenant / per-team YouTrack config (single team per deployment in v1; v3 — see §13.2).
+- Multi-tenant / per-team YouTrack config (single team per deployment in v1; v3 — see §13.3).
 - Tools beyond Planning Poker (shell is ready; future tools are separate work).
 - Self-hosted YouTrack support (cloud only).
 - T-shirt-size or custom SP scales (pure Fibonacci only).
 - Configurable duration deck (1h / 2h / 4h / 8h / 16h / 24h, fixed).
 - Capacity-aware assignment of reviewer / assignee (v2 — see §13.1).
+- Carry-over of unfinished tasks from the previous sprint (v2 — see §13.2).
 
 ## 13. v2 roadmap (notes, not designs)
 
@@ -354,7 +355,34 @@ sprint_calendar       (sprint_id, working_days int, holidays jsonb)
 - Does the suggestion engine optimize globally (Hungarian algorithm across all issues) or greedily (issue-at-a-time)? Greedy is simpler and matches the moderator's mental model; global is more accurate.
 - How is "remaining capacity" affected by issues outside the current session that are already in the sprint? (Read existing YouTrack assignments at session start; treat as fixed load.)
 
-### 13.2 Multi-tenant: per-team subpath and own YouTrack
+### 13.2 Carry-over of unfinished tasks from the previous sprint
+
+When a new sprint is being estimated, some issues from the previous sprint will be unfinished (not in a "done" state). The team needs to decide for each one: bring it into the new sprint as-is, re-estimate it (scope changed or partial work done), or leave it behind. Today YouTrack handles the *mechanical* movement of issues between sprints, but Full House should surface this decision as the first step of a new session.
+
+**Proposed flow (to be designed in v2):**
+
+1. At session creation, after picking the target (new) sprint, fetch the immediately-preceding sprint of the same board.
+2. List unfinished issues from that previous sprint (anything not in `YT_DONE_STATE_NAMES`) that are not yet in the target sprint.
+3. For each, the moderator picks one of: **Carry over as-is** (keep existing SP/duration), **Carry over and re-estimate** (drops it into the session's issue list at the top), or **Leave behind**.
+4. "Carry over as-is" moves the issue to the new sprint in YouTrack but skips the voting flow. The session's summary comment notes "Carried over from sprint X without re-estimation".
+5. "Carry over and re-estimate" goes through the normal flow; the original estimate is shown alongside the new one in the comment for traceability.
+
+**Inputs needed:**
+
+- Previous-sprint lookup. YouTrack agile boards expose sprints in order; we just pick the one with `finish` immediately before the target's `start`.
+- Original estimate values (read from the YouTrack SP/duration fields on the issue, since the v1 comment summary may have been amended).
+- An optional **remaining-work** field to capture partial progress (e.g. "estimate was 8h, 3h done, 5h left"). This is a YouTrack-side convention question — could be a custom "Remaining" field, the YouTrack "Spent time" field, or just typed in.
+
+**Open questions to resolve when v2 starts:**
+
+- Does Full House move the issue between sprints in YouTrack, or just mark the decision in the comment and let the team move it manually? (Moving requires write access to the agile board API; less reversible.)
+- How do we present "this is a carry-over" in the session UI so other voters know context? (Badge on the issue card.)
+- If the previous sprint had its own carry-overs, do we follow the chain back, or stop at the immediately-preceding sprint? (Probably stop at immediate predecessor — multi-hop is rare.)
+- Interaction with §13.1 capacity: a carried-over issue already has assignee/reviewer load that needs accounting for in the new sprint's capacity math.
+
+**v1 actions that protect this:** none required. The previous-sprint lookup uses existing YouTrack endpoints; the schema doesn't need new tables (carry-over decisions are captured as session comments + sprint moves in YouTrack itself, or as new `estimates` rounds if re-estimated).
+
+### 13.3 Multi-tenant: per-team subpath and own YouTrack
 
 Today the deployment is single-tenant: one YouTrack workspace, one team, env-var-configured. v3 turns Full House into a multi-tenant app where any team can sign up, get their own subpath, and configure their own YouTrack.
 
