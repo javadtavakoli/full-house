@@ -143,7 +143,7 @@ full-house/
 Run:
 ```bash
 cd /home/javad/Projects/full-house
-npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir=false --import-alias='@/*' --use-npm --no-turbopack
+pnpm create next-app@latest . --typescript --tailwind --eslint --app --src-dir=false --import-alias='@/*' --use-pnpm --no-turbopack
 ```
 
 Answer "yes" to overwrite existing files. The `.git` directory and existing docs/specs must be preserved (the scaffold won't touch them).
@@ -180,7 +180,7 @@ export default function Home() {
 
 Run:
 ```bash
-npm run dev
+pnpm dev
 ```
 Expected: server starts on http://localhost:3000 and the page renders "Full House". Stop the server with Ctrl-C.
 
@@ -200,25 +200,25 @@ git commit -m "chore: scaffold Next.js 15 + TS strict project"
 - [ ] **Step 1: Install runtime deps**
 
 ```bash
-npm install drizzle-orm @neondatabase/serverless pg @auth/core next-auth@beta zod pino pino-pretty pusher pusher-js @tanstack/react-query
+pnpm add drizzle-orm @neondatabase/serverless pg @auth/core next-auth@beta zod pino pino-pretty pusher pusher-js @tanstack/react-query
 ```
 
 - [ ] **Step 2: Install dev deps**
 
 ```bash
-npm install -D drizzle-kit @types/pg vitest @vitest/coverage-v8 @vitejs/plugin-react jsdom @testing-library/react @testing-library/jest-dom @playwright/test msw testcontainers tsx
+pnpm add -D drizzle-kit @types/pg vitest @vitest/coverage-v8 @vitejs/plugin-react jsdom @testing-library/react @testing-library/jest-dom @playwright/test msw testcontainers tsx
 ```
 
 - [ ] **Step 3: Initialize Playwright browsers**
 
 ```bash
-npx playwright install --with-deps chromium
+pnpm exec playwright install --with-deps chromium
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add package.json package-lock.json
+git add package.json pnpm-lock.yaml
 git commit -m "chore: install runtime and dev dependencies"
 ```
 
@@ -231,14 +231,14 @@ git commit -m "chore: install runtime and dev dependencies"
 - [ ] **Step 1: Run init**
 
 ```bash
-npx shadcn@latest init -d
+pnpm dlx shadcn@latest init -d
 ```
 Accept defaults: TypeScript, "default" style, "neutral" base color, `app/globals.css`, CSS variables, `components/ui` directory, `@/components`, `@/lib/utils`.
 
 - [ ] **Step 2: Install components we'll need**
 
 ```bash
-npx shadcn@latest add button card dialog dropdown-menu input label select toast avatar badge separator skeleton
+pnpm dlx shadcn@latest add button card dialog dropdown-menu input label select toast avatar badge separator skeleton
 ```
 
 - [ ] **Step 3: Commit**
@@ -301,7 +301,7 @@ In `package.json`, add to `"scripts"`:
 
 Run:
 ```bash
-npm test
+pnpm test
 ```
 Expected: "No test files found." (exit 0 or skipped — that's fine because we have no tests yet).
 
@@ -338,7 +338,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm run dev",
+    command: "pnpm dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
@@ -363,7 +363,7 @@ test("landing page renders", async ({ page }) => {
 
 Run:
 ```bash
-npm run test:e2e
+pnpm test:e2e
 ```
 Expected: 1 passed.
 
@@ -434,7 +434,7 @@ describe("env", () => {
 - [ ] **Step 2: Run test, see failure**
 
 ```bash
-npm test -- env
+pnpm test -- env
 ```
 Expected: FAIL (`lib/env` not found).
 
@@ -480,7 +480,7 @@ export const env = parsed.data;
 - [ ] **Step 4: Run test, see pass**
 
 ```bash
-npm test -- env
+pnpm test -- env
 ```
 Expected: 2 passed.
 
@@ -655,7 +655,7 @@ export const oauthAccounts = pgTable(
 
 Run:
 ```bash
-npm run db:generate -- --name init_users
+pnpm db:generate -- --name init_users
 ```
 Expected: a SQL file under `db/migrations/0000_*.sql`.
 
@@ -760,7 +760,7 @@ export const youtrackPosts = pgTable("youtrack_posts", {
 - [ ] **Step 2: Generate migration**
 
 ```bash
-npm run db:generate -- --name init_poker
+pnpm db:generate -- --name init_poker
 ```
 
 - [ ] **Step 3: Commit**
@@ -831,7 +831,7 @@ afterAll(async () => {
 - [ ] **Step 3: Add `@testcontainers/postgresql`**
 
 ```bash
-npm install -D @testcontainers/postgresql
+pnpm add -D @testcontainers/postgresql
 ```
 
 - [ ] **Step 4: Verify with a trivial smoke test**
@@ -854,7 +854,7 @@ describe("db", () => {
 - [ ] **Step 5: Run**
 
 ```bash
-npm run test:integration
+pnpm test:integration
 ```
 Expected: 1 passed (takes ~15s for first container pull).
 
@@ -909,7 +909,7 @@ describe("encryption", () => {
 - [ ] **Step 2: Run, see fail**
 
 ```bash
-npm test -- encryption
+pnpm test -- encryption
 ```
 Expected: FAIL (module not found).
 
@@ -954,7 +954,7 @@ export function decrypt(ciphertextB64: string, keyB64: string): string {
 - [ ] **Step 4: Run, see pass**
 
 ```bash
-npm test -- encryption
+pnpm test -- encryption
 ```
 Expected: 4 passed.
 
@@ -1003,7 +1003,7 @@ describe("decks", () => {
 - [ ] **Step 2: Run, see fail**
 
 ```bash
-npm test -- decks
+pnpm test -- decks
 ```
 
 - [ ] **Step 3: Implement**
@@ -1028,7 +1028,7 @@ export function isValidCard(value: number, kind: EstimateKind): boolean {
 - [ ] **Step 4: Run, see pass**
 
 ```bash
-npm test -- decks
+pnpm test -- decks
 ```
 Expected: 4 passed.
 
@@ -1094,7 +1094,7 @@ describe("suggestDuration", () => {
 - [ ] **Step 2: Run, see fail**
 
 ```bash
-npm test -- suggestion
+pnpm test -- suggestion
 ```
 
 - [ ] **Step 3: Implement**
@@ -1149,7 +1149,7 @@ function snapToNearestRoundingUp(value: number, deck: readonly number[]): number
 - [ ] **Step 4: Run, see pass**
 
 ```bash
-npm test -- suggestion
+pnpm test -- suggestion
 ```
 Expected: 8 passed.
 
@@ -1232,7 +1232,7 @@ describe("state machine", () => {
 - [ ] **Step 2: Run, see fail**
 
 ```bash
-npm test -- state-machine
+pnpm test -- state-machine
 ```
 
 - [ ] **Step 3: Implement**
@@ -1347,7 +1347,7 @@ export function isRevealedStatus(s: IssueStatus): boolean {
 - [ ] **Step 4: Run, see pass**
 
 ```bash
-npm test -- state-machine
+pnpm test -- state-machine
 ```
 Expected: 7 passed.
 
@@ -1438,7 +1438,7 @@ describe("formatSummaryComment", () => {
 - [ ] **Step 2: Run, see fail**
 
 ```bash
-npm test -- comment-formatter
+pnpm test -- comment-formatter
 ```
 
 - [ ] **Step 3: Implement**
@@ -1529,7 +1529,7 @@ function formatNum(n: number): string {
 - [ ] **Step 4: Run, see pass**
 
 ```bash
-npm test -- comment-formatter
+pnpm test -- comment-formatter
 ```
 Expected: 6 passed.
 
@@ -1597,7 +1597,7 @@ process.env.NEXT_PUBLIC_SITE_URL ??= "http://localhost:3000";
 - [ ] **Step 3: Run, see fail**
 
 ```bash
-npm test -- youtrack/config
+pnpm test -- youtrack/config
 ```
 
 - [ ] **Step 4: Implement**
@@ -1633,7 +1633,7 @@ export function youtrackConfig(): YoutrackConfig {
 - [ ] **Step 5: Run, see pass**
 
 ```bash
-npm test -- youtrack/config
+pnpm test -- youtrack/config
 ```
 
 - [ ] **Step 6: Commit**
@@ -1652,7 +1652,7 @@ git commit -m "feat(youtrack): config accessor (v3-protection) + test env shim"
 - [ ] **Step 1: Install MSW**
 
 ```bash
-npm install -D msw
+pnpm add -D msw
 ```
 
 - [ ] **Step 2: Write failing test**
@@ -1695,7 +1695,7 @@ describe("youtrackFetch", () => {
 - [ ] **Step 3: Run, see fail**
 
 ```bash
-npm test -- youtrack/client
+pnpm test -- youtrack/client
 ```
 
 - [ ] **Step 4: Implement**
@@ -1751,7 +1751,7 @@ export async function youtrackFetch<T = unknown>(path: string, opts: Opts): Prom
 - [ ] **Step 5: Run, see pass**
 
 ```bash
-npm test -- youtrack/client
+pnpm test -- youtrack/client
 ```
 Expected: 2 passed.
 
@@ -1805,7 +1805,7 @@ describe("listBoards", () => {
 - [ ] **Step 2: Run, see fail**
 
 ```bash
-npm test -- youtrack/boards
+pnpm test -- youtrack/boards
 ```
 
 - [ ] **Step 3: Implement**
@@ -1829,7 +1829,7 @@ export async function listBoards(token: string): Promise<YtBoard[]> {
 - [ ] **Step 4: Run, see pass**
 
 ```bash
-npm test -- youtrack/boards
+pnpm test -- youtrack/boards
 ```
 
 - [ ] **Step 5: Commit**
@@ -2107,7 +2107,7 @@ export async function postIssueComment(token: string, issueKey: string, text: st
 - [ ] **Step 4: Run, see pass**
 
 ```bash
-npm test -- youtrack/issues
+pnpm test -- youtrack/issues
 ```
 
 - [ ] **Step 5: Commit**
@@ -2408,7 +2408,7 @@ export default function LoginPage({ searchParams }: { searchParams: { next?: str
 - [ ] **Step 3: Verify**
 
 ```bash
-npm run dev
+pnpm dev
 ```
 Visit http://localhost:3000/login. Confirm the button renders. (Real OAuth flow needs a registered Hub app — not part of this task.)
 
@@ -2523,7 +2523,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 Add the sonner toaster:
 
 ```bash
-npx shadcn@latest add sonner
+pnpm dlx shadcn@latest add sonner
 ```
 
 - [ ] **Step 3: Update smoke test**
@@ -2542,7 +2542,7 @@ test("landing page renders the headline", async ({ page }) => {
 - [ ] **Step 4: Run smoke**
 
 ```bash
-npm run test:e2e
+pnpm test:e2e
 ```
 Expected: 1 passed.
 
@@ -3140,7 +3140,7 @@ describe("session lifecycle", () => {
 - [ ] **Step 3: Run integration**
 
 ```bash
-npm run test:integration
+pnpm test:integration
 ```
 Expected: all pass.
 
@@ -3322,7 +3322,7 @@ describe("voting", () => {
 - [ ] **Step 3: Run integration**
 
 ```bash
-npm run test:integration
+pnpm test:integration
 ```
 Expected: all pass.
 
@@ -3559,7 +3559,7 @@ describe("voting advanced", () => {
 - [ ] **Step 3: Run**
 
 ```bash
-npm run test:integration
+pnpm test:integration
 ```
 Expected: all pass.
 
@@ -4685,7 +4685,7 @@ describe("syncIssue", () => {
 - [ ] **Step 6: Run**
 
 ```bash
-npm run test:integration
+pnpm test:integration
 ```
 Expected: all pass.
 
@@ -4764,7 +4764,7 @@ git commit -m "feat(sync): surface failed sync attempts with retry"
 - [ ] **Step 1: Install Serwist**
 
 ```bash
-npm install @serwist/next serwist
+pnpm add @serwist/next serwist
 ```
 
 - [ ] **Step 2: Manifest route**
@@ -4838,7 +4838,7 @@ export default withSerwist(nextConfig);
 - [ ] **Step 6: Verify**
 
 ```bash
-npm run build
+pnpm build
 ```
 Expected: build succeeds, `public/sw.js` generated.
 
@@ -5124,7 +5124,7 @@ test("happy path: 2 voters complete SP + 3 duration phases, sync writes back", a
 When running E2E, set `E2E_TEST=1` in the dev server env (e.g., create `.env.test` and load via `dotenv-cli`):
 
 ```bash
-E2E_TEST=1 npm run test:e2e
+E2E_TEST=1 pnpm test:e2e
 ```
 
 - [ ] **Step 4: Commit**
