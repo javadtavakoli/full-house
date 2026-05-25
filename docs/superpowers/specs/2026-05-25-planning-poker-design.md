@@ -317,12 +317,12 @@ Stated explicitly so we don't drift:
 - Past-sessions history UI (sessions stored, no list/detail screen).
 - Estimated-vs-actual analytics.
 - Push notifications.
-- Multi-tenant / multi-org (single team per deployment; YouTrack workspace = identity boundary).
+- Multi-tenant / per-team YouTrack config (single team per deployment in v1; v3 — see §13.2).
 - Tools beyond Planning Poker (shell is ready; future tools are separate work).
 - Self-hosted YouTrack support (cloud only).
 - T-shirt-size or custom SP scales (pure Fibonacci only).
 - Configurable duration deck (1h / 2h / 4h / 8h / 16h / 24h, fixed).
-- Capacity-aware assignment of reviewer / assignee (v2 — see §13).
+- Capacity-aware assignment of reviewer / assignee (v2 — see §13.1).
 
 ## 13. v2 roadmap (notes, not designs)
 
@@ -353,6 +353,64 @@ sprint_calendar       (sprint_id, working_days int, holidays jsonb)
 - Where do holidays and individual time-off come from? (Manual UI? YouTrack time-tracking? Calendar integration?)
 - Does the suggestion engine optimize globally (Hungarian algorithm across all issues) or greedily (issue-at-a-time)? Greedy is simpler and matches the moderator's mental model; global is more accurate.
 - How is "remaining capacity" affected by issues outside the current session that are already in the sprint? (Read existing YouTrack assignments at session start; treat as fixed load.)
+
+### 13.2 Multi-tenant: per-team subpath and own YouTrack
+
+Today the deployment is single-tenant: one YouTrack workspace, one team, env-var-configured. v3 turns Full House into a multi-tenant app where any team can sign up, get their own subpath, and configure their own YouTrack.
+
+**Routing.** Every authenticated route gets a team slug prefix:
+
+```
+/                       — marketing (unchanged)
+/signup, /login         — global auth
+/[team]/app             — team dashboard
+/[team]/app/poker       — poker home for that team
+/[team]/app/poker/[id]  — session room
+/[team]/admin/settings  — YouTrack config, members, billing (if any)
+```
+
+The `[team]` slug is unique, URL-safe, reserved-word-checked. Subdomain routing (`foo.fullhouse.app`) is an alternative we can support later if requested — the data model is identical; only the routing changes.
+
+**Per-team configuration.** What's an env var in v1 becomes a row in the `teams` table:
+
+- YouTrack base URL, OAuth client ID/secret, redirect URI
+- SP field name, duration field name, reviewer field name, "done" state names
+- Duration deck (now configurable per team)
+- SP scale (Fibonacci / modified / T-shirt / custom)
+- Encryption key versioning (each team's tokens encrypted under a per-team key derived from the master key)
+
+**Schema additions (heads-up, not v1 work):**
+
+```
+teams                 (id, slug, name, created_at, plan)
+team_settings         (team_id PK, youtrack_base_url, sp_field, duration_field,
+                       reviewer_field, duration_deck jsonb, sp_scale jsonb,
+                       done_state_names text[])
+team_members          (team_id, user_id, role 'owner'|'admin'|'member', joined_at)
+team_oauth_apps       (team_id PK, client_id, client_secret_encrypted)
+```
+
+Existing tables — `sessions`, `issues`, `oauth_accounts` — gain a `team_id` foreign key. v1 schema should reserve room for this column from day one (write it as nullable now, populate with a default team during v3 migration).
+
+**Auth changes.**
+
+- Users can belong to multiple teams. The OAuth round-trip happens per team (each team has its own OAuth app registered in their YouTrack Hub) and produces a separate `oauth_accounts` row scoped to `(user_id, team_id)`.
+- Login lands the user on a team picker if they're in more than one team.
+- Team owners invite members by email; invitees must complete the YouTrack OAuth for that team.
+
+**Open questions to resolve when v3 starts:**
+
+- Slug reservation rules (block `app`, `admin`, `api`, `signup`, etc.).
+- Billing model: free tier limits, paid plans, or fully free for v3.
+- Cross-team data isolation: row-level security in Postgres, or rely on application-layer `WHERE team_id =` filtering. (Probably both — defense in depth.)
+- How is the v1 single-tenant deployment migrated? (Wrap existing data in one team named after the workspace, set its settings from the current env vars, then drop env-var paths.)
+- Custom domains per team (e.g. `poker.acme.com` → team `acme`) — likely v4.
+
+**v1 actions that protect v3:**
+
+- Add `team_id uuid` (nullable, indexed) to `sessions`, `issues`, `oauth_accounts` now. Single-tenant v1 leaves it null; v3 migration backfills.
+- Keep YouTrack config behind a thin `youtrackConfig()` accessor (reads env vars in v1) rather than scattering `process.env.YT_*` through the codebase. v3 replaces the implementation with a per-request team lookup.
+- Make the OAuth client factory accept config as an argument, not read env directly.
 
 ## 14. Environment variables
 
