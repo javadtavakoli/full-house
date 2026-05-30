@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     globals: true,
     include: ["tests/integration/**/*.test.ts"],
-    setupFiles: ["./tests/integration/setup.ts"],
+    setupFiles: ["./tests/integration/env-setup.ts", "./tests/integration/setup.ts"],
     testTimeout: 60_000,
     pool: "forks",
     poolOptions: { forks: { singleFork: true } },

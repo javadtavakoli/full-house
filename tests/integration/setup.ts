@@ -13,6 +13,8 @@ export let testDb: ReturnType<typeof drizzle<typeof schema>>;
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:16-alpine").start();
   process.env.DATABASE_URL = container.getConnectionUri();
+  // Clear global db pool cache so the db client module will reinitialize
+  (global as any).__dbPool = undefined;
   pool = new Pool({ connectionString: container.getConnectionUri() });
   testDb = drizzle(pool, { schema });
   await migrate(testDb, { migrationsFolder: "./db/migrations" });
