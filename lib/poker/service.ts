@@ -284,3 +284,44 @@ export async function endSession(sessionId: string, moderatorUserId: string) {
     await tx.update(sessions).set({ status: "ended", endedAt: new Date() }).where(eq(sessions.id, sessionId));
   });
 }
+
+export type RoomSnapshot = {
+  session: typeof sessions.$inferSelect;
+  members: Array<{ userId: string; role: string; displayName: string; avatarUrl: string | null; lastSeenAt: Date }>;
+  issues: Array<typeof issues.$inferSelect>;
+  activeIssue: {
+    issue: typeof issues.$inferSelect;
+    currentEstimate: typeof estimates.$inferSelect;
+    votes: Array<{ userId: string; value: number }>;
+    isRevealed: boolean;
+  } | null;
+};
+
+export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot | null> {
+  const view = await getSessionView(sessionId);
+  if (!view) return null;
+  const active = view.issues.find((i) => !["pending", "completed", "skipped"].includes(i.status));
+  let activeIssue: RoomSnapshot["activeIssue"] = null;
+  if (active) {
+    const [current] = await db
+      .select()
+      .from(estimates)
+      .where(eq(estimates.issueId, active.id))
+      .orderBy(desc(estimates.round), desc(estimates.id))
+      .limit(1);
+    if (current) {
+      const isRevealed = active.status.endsWith("_revealed");
+      const voteRows = await db
+        .select({ userId: votes.userId, value: votes.value })
+        .from(votes)
+        .where(eq(votes.estimateId, current.id));
+      activeIssue = {
+        issue: active,
+        currentEstimate: current,
+        votes: voteRows.map((v) => ({ userId: v.userId, value: Number(v.value) })),
+        isRevealed,
+      };
+    }
+  }
+  return { session: view.session, members: view.members, issues: view.issues, activeIssue };
+}
