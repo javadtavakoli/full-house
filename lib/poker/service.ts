@@ -308,7 +308,7 @@ export async function endSession(sessionId: string, moderatorUserId: string) {
 export type RoomSnapshot = {
   session: typeof sessions.$inferSelect;
   members: Array<{ userId: string; role: string; displayName: string; avatarUrl: string | null; lastSeenAt: Date }>;
-  issues: Array<typeof issues.$inferSelect>;
+  issues: Array<typeof issues.$inferSelect & { syncStatus: "ok" | "failed" | null }>;
   activeIssue: {
     issue: typeof issues.$inferSelect;
     currentEstimate: typeof estimates.$inferSelect;
@@ -348,7 +348,16 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
       };
     }
   }
-  return { session: view.session, members: view.members, issues: view.issues, activeIssue };
+  const postRows = await db
+    .select({ issueId: youtrackPosts.issueId, status: youtrackPosts.status })
+    .from(youtrackPosts);
+  const byIssue = new Map<string, "ok" | "failed">();
+  for (const p of postRows) {
+    if (p.status === "failed") byIssue.set(p.issueId, "failed");
+    else if (!byIssue.has(p.issueId)) byIssue.set(p.issueId, "ok");
+  }
+  const issuesWithSync = view.issues.map((i) => ({ ...i, syncStatus: byIssue.get(i.id) ?? null }));
+  return { session: view.session, members: view.members, issues: issuesWithSync, activeIssue };
 }
 
 export async function gatherSummary(issueId: string): Promise<SummaryInput> {

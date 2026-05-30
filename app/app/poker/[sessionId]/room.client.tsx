@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 type Snapshot = {
   session: { id: string; sprintName: string; createdBy: string; status: string };
   members: Array<{ userId: string; role: string; displayName: string; avatarUrl: string | null; lastSeenAt: string }>;
-  issues: Array<{ id: string; issueKey: string; summary: string; description: string | null; status: string; position: number }>;
+  issues: Array<{ id: string; issueKey: string; summary: string; description: string | null; status: string; position: number; syncStatus: "ok" | "failed" | null }>;
   activeIssue: {
     issue: { id: string; issueKey: string; summary: string; description: string | null; status: string };
     currentEstimate: { id: string; round: number; kind: "sp" | "duration"; phase: string | null };
@@ -89,6 +89,18 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
     const r = await fetch(`/api/sessions/${snap.session.id}`, { method: "DELETE" });
     if (!r.ok) toast.error(await r.text());
   }
+  async function retrySync(issueId: string) {
+    const r = await fetch(`/api/sessions/${snap.session.id}/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ issueId }),
+    });
+    if (!r.ok) { toast.error(await r.text()); return; }
+    const result = await r.json();
+    const failures = Object.entries(result).filter(([, v]) => !(v as { ok: boolean }).ok).map(([k]) => k);
+    if (failures.length === 0) { toast.success("Sync succeeded"); refresh(); }
+    else toast.error(`Sync still failing: ${failures.join(", ")}`);
+  }
 
   const pending = snap.issues.filter((i) => i.status === "pending");
 
@@ -118,6 +130,26 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
           </ul>
         </section>
       )}
+
+      {!active && (() => {
+        const completed = snap.issues.filter((i) => i.status === "completed" || i.status === "skipped");
+        if (completed.length === 0) return null;
+        return (
+          <section className="flex flex-col gap-2 mt-4">
+            <h2 className="text-sm font-medium text-muted-foreground">Completed</h2>
+            <ul className="flex flex-col gap-1">
+              {completed.map((i) => (
+                <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2 text-sm">
+                  <span className="opacity-70">{i.issueKey} — {i.summary} {i.status === "skipped" && <em className="text-xs text-muted-foreground">(skipped)</em>}</span>
+                  {i.syncStatus === "failed" && (
+                    <Button size="sm" variant="outline" onClick={() => retrySync(i.id)}>Retry sync</Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
 
       {active && (
         <>
