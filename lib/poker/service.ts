@@ -1,5 +1,6 @@
+import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { sessions, sessionMembers, issues } from "@/lib/db/schema";
+import { sessions, sessionMembers, issues, users } from "@/lib/db/schema";
 import { listSprintIssues } from "@/lib/youtrack/issues";
 import { youtrackConfig } from "@/lib/youtrack/config";
 
@@ -48,4 +49,36 @@ export async function createSession(opts: {
 
     return session;
   });
+}
+
+export async function joinSession(sessionId: string, userId: string) {
+  await db
+    .insert(sessionMembers)
+    .values({ sessionId, userId, role: "voter" })
+    .onConflictDoUpdate({
+      target: [sessionMembers.sessionId, sessionMembers.userId],
+      set: { lastSeenAt: new Date() },
+    });
+}
+
+export async function getSessionView(sessionId: string) {
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+  if (!session) return null;
+  const members = await db
+    .select({
+      userId: sessionMembers.userId,
+      role: sessionMembers.role,
+      lastSeenAt: sessionMembers.lastSeenAt,
+      displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(sessionMembers)
+    .innerJoin(users, eq(users.id, sessionMembers.userId))
+    .where(eq(sessionMembers.sessionId, sessionId));
+  const issuesList = await db
+    .select()
+    .from(issues)
+    .where(eq(issues.sessionId, sessionId))
+    .orderBy(issues.position);
+  return { session, members, issues: issuesList };
 }
