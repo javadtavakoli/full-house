@@ -1,23 +1,15 @@
 import NextAuth from "next-auth";
-import { YoutrackProvider } from "./youtrack-provider";
-import { env } from "@/lib/env";
+import { authConfig } from "./edge-config";
 import { db } from "@/lib/db/client";
 import { users, oauthAccounts } from "@/lib/db/schema";
 import { encrypt } from "@/lib/encryption";
+import { env } from "@/lib/env";
 import { eq } from "drizzle-orm";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: env.AUTH_SECRET,
-  session: { strategy: "jwt" },
-  providers: [
-    YoutrackProvider({
-      clientId: env.YT_OAUTH_CLIENT_ID,
-      clientSecret: env.YT_OAUTH_CLIENT_SECRET,
-      workspaceBaseUrl: env.YT_BASE_URL,
-    }),
-  ],
-  pages: { signIn: "/login" },
+  ...authConfig,
   callbacks: {
+    ...authConfig.callbacks,
     async signIn({ user, account, profile }) {
       if (!account || account.provider !== "youtrack" || !profile) return false;
       const youtrackId = String((profile as { id?: string }).id ?? user.id);
@@ -66,12 +58,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (u) token.userId = u.id;
       }
       return token;
-    },
-    async session({ session, token }) {
-      if (token.userId && session.user) {
-        (session.user as { id?: string }).id = token.userId as string;
-      }
-      return session;
     },
   },
 });
