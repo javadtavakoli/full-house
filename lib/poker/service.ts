@@ -1,10 +1,11 @@
 import { eq, and, desc, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { sessions, sessionMembers, issues, users, estimates, votes } from "@/lib/db/schema";
+import { sessions, sessionMembers, issues, users, estimates, votes, youtrackPosts } from "@/lib/db/schema";
 import { listSprintIssues } from "@/lib/youtrack/issues";
 import { youtrackConfig } from "@/lib/youtrack/config";
 import { reduceIssue, phaseOfStatus, type IssueStatus } from "./state-machine";
 import { isValidCard } from "./decks";
+import type { SummaryInput } from "./comment-formatter";
 
 export async function createSession(opts: {
   creatorUserId: string;
@@ -143,10 +144,29 @@ export async function reveal(sessionId: string, issueId: string, moderatorUserId
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function currentEstimate(tx: Tx, issueId: string) {
+  // Determine the active (kind, phase) from the issue's current status so we
+  // pick the estimate row for the live phase, not whichever happens to have
+  // the largest random UUID. Within a single phase, the highest round wins.
+  const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+  if (!issue) return null;
+  const { kind, phase } = phaseOfStatus(issue.status as IssueStatus);
+  if (!kind) {
+    // No active phase (pending/completed/skipped) — fall back to the highest
+    // round across all estimate rows, for callers that still want the most
+    // recently touched row.
+    const [row] = await tx
+      .select()
+      .from(estimates)
+      .where(eq(estimates.issueId, issueId))
+      .orderBy(desc(estimates.round), desc(estimates.id))
+      .limit(1);
+    return row ?? null;
+  }
+  const phaseCond = phase === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phase);
   const [row] = await tx
     .select()
     .from(estimates)
-    .where(eq(estimates.issueId, issueId))
+    .where(and(eq(estimates.issueId, issueId), eq(estimates.kind, kind), phaseCond))
     .orderBy(desc(estimates.round), desc(estimates.id))
     .limit(1);
   return row ?? null;
@@ -303,10 +323,15 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
   const active = view.issues.find((i) => !["pending", "completed", "skipped"].includes(i.status));
   let activeIssue: RoomSnapshot["activeIssue"] = null;
   if (active) {
+    const { kind, phase } = phaseOfStatus(active.status as IssueStatus);
+    const phaseCond = phase === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phase);
+    const whereExpr = kind
+      ? and(eq(estimates.issueId, active.id), eq(estimates.kind, kind), phaseCond)
+      : eq(estimates.issueId, active.id);
     const [current] = await db
       .select()
       .from(estimates)
-      .where(eq(estimates.issueId, active.id))
+      .where(whereExpr)
       .orderBy(desc(estimates.round), desc(estimates.id))
       .limit(1);
     if (current) {
@@ -324,4 +349,71 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
     }
   }
   return { session: view.session, members: view.members, issues: view.issues, activeIssue };
+}
+
+export async function gatherSummary(issueId: string): Promise<SummaryInput> {
+  const [issue] = await db.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+  if (!issue) throw new Error("issue not found");
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, issue.sessionId)).limit(1);
+  if (!session) throw new Error("session not found");
+
+  const memberRows = await db
+    .select({ userId: sessionMembers.userId, displayName: users.displayName })
+    .from(sessionMembers)
+    .innerJoin(users, eq(users.id, sessionMembers.userId))
+    .where(eq(sessionMembers.sessionId, issue.sessionId));
+  const memberNames = memberRows.map((m) => m.displayName);
+  const nameOf = (id: string) => memberRows.find((m) => m.userId === id)?.displayName ?? "?";
+
+  const estimateRows = await db.select().from(estimates).where(eq(estimates.issueId, issueId));
+  const latestByKey = new Map<string, typeof estimateRows[number]>();
+  for (const e of estimateRows) {
+    const key = `${e.kind}:${e.phase ?? ""}`;
+    const prev = latestByKey.get(key);
+    if (!prev || e.round > prev.round) latestByKey.set(key, e);
+  }
+  const allRounds = new Map<string, number>();
+  for (const e of estimateRows) {
+    const key = `${e.kind}:${e.phase ?? ""}`;
+    allRounds.set(key, Math.max(allRounds.get(key) ?? 0, e.round));
+  }
+
+  async function summaryFor(key: string) {
+    const latest = latestByKey.get(key);
+    if (!latest) return { skipped: true, final: null, rounds: 0, votes: [] as { user: string; value: number }[] };
+    const voteRows = await db.select().from(votes).where(eq(votes.estimateId, latest.id));
+    return {
+      skipped: latest.finalValue === null,
+      final: latest.finalValue !== null ? Number(latest.finalValue) : null,
+      rounds: allRounds.get(key) ?? 1,
+      votes: voteRows.map((v) => ({ user: nameOf(v.userId), value: Number(v.value) })),
+    };
+  }
+
+  return {
+    date: new Date(),
+    members: memberNames,
+    sp: await summaryFor("sp:"),
+    duration: {
+      impl: await summaryFor("duration:impl"),
+      review: await summaryFor("duration:review"),
+      test: await summaryFor("duration:test"),
+    },
+  };
+}
+
+export async function logYoutrackPost(opts: {
+  issueId: string;
+  kind: "sp_field" | "duration_field" | "comment";
+  request: unknown;
+  response: unknown;
+  status: "success" | "failed";
+}) {
+  await db.insert(youtrackPosts).values({
+    issueId: opts.issueId,
+    kind: opts.kind,
+    requestPayload: opts.request as object,
+    responsePayload: (opts.response as object) ?? null,
+    status: opts.status,
+  });
 }
