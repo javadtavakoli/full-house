@@ -173,3 +173,114 @@ async function assertModerator(tx: Tx, sessionId: string, userId: string) {
 function notInState(states: string[]) {
   return sql`${issues.status} NOT IN (${sql.join(states.map((s) => sql`${s}`), sql`, `)})`;
 }
+
+export async function submitFinal(sessionId: string, issueId: string, moderatorUserId: string, finalValue: number) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue) throw new Error("issue not found");
+    if (!issue.status.endsWith("_revealed")) throw new Error(`cannot submit from ${issue.status}`);
+
+    const current = await currentEstimate(tx, issueId);
+    if (!current) throw new Error("no current estimate");
+    await tx
+      .update(estimates)
+      .set({ finalValue: String(finalValue), decidedBy: moderatorUserId, decidedAt: new Date() })
+      .where(eq(estimates.id, current.id));
+
+    const next = reduceIssue({ status: issue.status as IssueStatus, round: current.round }, { type: "submit" });
+    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+
+    // Open the next estimate row if we advanced into a voting state
+    const phase = phaseOfStatus(next.status);
+    if (phase.kind && next.status.endsWith("_voting")) {
+      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round: 1 });
+    }
+    return next;
+  });
+}
+
+export async function skipPhase(sessionId: string, issueId: string, moderatorUserId: string) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue) throw new Error("issue not found");
+    const current = await currentEstimate(tx, issueId);
+    if (current) {
+      await tx
+        .update(estimates)
+        .set({ finalValue: null, decidedBy: moderatorUserId, decidedAt: new Date() })
+        .where(eq(estimates.id, current.id));
+    }
+    const next = reduceIssue({ status: issue.status as IssueStatus, round: current?.round ?? 1 }, { type: "skipPhase" });
+    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+    const phase = phaseOfStatus(next.status);
+    if (phase.kind && next.status.endsWith("_voting")) {
+      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round: 1 });
+    }
+    return next;
+  });
+}
+
+export async function skipIssue(sessionId: string, issueId: string, moderatorUserId: string) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue) throw new Error("issue not found");
+    const next = reduceIssue({ status: issue.status as IssueStatus, round: 1 }, { type: "skipIssue" });
+    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+    return next;
+  });
+}
+
+export async function startRevote(sessionId: string, issueId: string, moderatorUserId: string) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue) throw new Error("issue not found");
+    const current = await currentEstimate(tx, issueId);
+    if (!current) throw new Error("no current estimate");
+    const next = reduceIssue({ status: issue.status as IssueStatus, round: current.round }, { type: "revote" });
+    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+    // open a new estimate row at round+1
+    await tx.insert(estimates).values({
+      issueId, kind: current.kind, phase: current.phase, round: current.round + 1,
+    });
+    return next;
+  });
+}
+
+export async function takeOverModeration(sessionId: string, userId: string) {
+  return db.transaction(async (tx) => {
+    const [me] = await tx
+      .select()
+      .from(sessionMembers)
+      .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, userId)))
+      .limit(1);
+    if (!me) throw new Error("not a member");
+    const [currentMod] = await tx
+      .select()
+      .from(sessionMembers)
+      .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.role, "moderator")))
+      .limit(1);
+    if (currentMod) {
+      const stale = Date.now() - currentMod.lastSeenAt.getTime() > 5 * 60 * 1000;
+      if (!stale) throw new Error("current moderator is active");
+      await tx
+        .update(sessionMembers)
+        .set({ role: "voter" })
+        .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, currentMod.userId)));
+    }
+    await tx
+      .update(sessionMembers)
+      .set({ role: "moderator", lastSeenAt: new Date() })
+      .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, userId)));
+  });
+}
+
+export async function endSession(sessionId: string, moderatorUserId: string) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    await tx.update(sessions).set({ status: "ended", endedAt: new Date() }).where(eq(sessions.id, sessionId));
+  });
+}
