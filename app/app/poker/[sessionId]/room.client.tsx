@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSessionRoom } from "@/hooks/use-session-room";
+import { usePresencePing } from "@/hooks/use-presence-ping";
 import { CardDeck } from "@/components/poker/card-deck";
 import { VoterList } from "@/components/poker/voter-list";
 import { RevealPanel } from "@/components/poker/reveal-panel";
@@ -32,8 +33,15 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
   const [snap, setSnap] = useState<Snapshot>(initialSnapshot);
   const [myCard, setMyCard] = useState<number | null>(null);
 
+  usePresencePing(initialSnapshot.session.id);
+
   const isModerator = snap.members.find((m) => m.userId === currentUserId)?.role === "moderator";
   const moderatorId = snap.members.find((m) => m.role === "moderator")?.userId ?? null;
+  const moderatorIsStale = (() => {
+    const mod = snap.members.find((m) => m.userId === moderatorId);
+    if (!mod) return false;
+    return Date.now() - new Date(mod.lastSeenAt).getTime() > 5 * 60 * 1000;
+  })();
   const active = snap.activeIssue;
   const status = active?.issue.status ?? "pending";
   const { kind, phase } = phaseOfStatus(status as never);
@@ -111,9 +119,18 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
           <h1 className="text-xl font-semibold">{snap.session.sprintName}</h1>
           <p className="text-xs text-muted-foreground">{snap.issues.length} issues · room: {snap.session.id.slice(0, 8)}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(window.location.href); toast("URL copied"); }}>
-          Copy invite URL
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(window.location.href); toast("URL copied"); }}>
+            Copy invite URL
+          </Button>
+          {!isModerator && moderatorIsStale && (
+            <Button size="sm" variant="outline" onClick={async () => {
+              const r = await fetch(`/api/sessions/${snap.session.id}/takeover`, { method: "POST" });
+              if (!r.ok) toast.error(await r.text());
+              else { toast.success("You're the moderator now"); refresh(); }
+            }}>Take over moderation</Button>
+          )}
+        </div>
       </header>
 
       {!active && (
