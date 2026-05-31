@@ -1,0 +1,114 @@
+name: Deploy
+
+# Runs unit tests on every push/PR to main, deploys preview on PR, deploys production on push to main.
+#
+# REQUIRED REPO SECRETS (Settings → Secrets and variables → Actions → New repository secret):
+#   VERCEL_TOKEN       — Personal access token from https://vercel.com/account/tokens
+#   VERCEL_ORG_ID      — Team or personal account ID
+#   VERCEL_PROJECT_ID  — Project ID
+#
+# To get ORG_ID and PROJECT_ID, run `pnpm dlx vercel link` once locally inside the repo —
+# it writes `.vercel/project.json` containing both values.
+#
+# REQUIRED VERCEL PROJECT ENV VARS (Vercel dashboard → Project → Settings → Environment Variables,
+# applied to both "Production" and "Preview"):
+#   DATABASE_URL, AUTH_SECRET, YT_BASE_URL, YT_OAUTH_CLIENT_ID, YT_OAUTH_CLIENT_SECRET,
+#   YT_OAUTH_REDIRECT_URI, YT_TOKEN_ENC_KEY, YT_SP_FIELD, YT_DURATION_FIELD, YT_DONE_STATE_NAMES,
+#   PUSHER_APP_ID, PUSHER_KEY, PUSHER_SECRET, PUSHER_CLUSTER,
+#   NEXT_PUBLIC_PUSHER_KEY, NEXT_PUBLIC_PUSHER_CLUSTER, NEXT_PUBLIC_SITE_URL
+# (Names match .env.example. Validated by lib/env.ts at build time — wrong/missing values fail the build.)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run unit tests
+        run: pnpm test
+      # NOTE: integration tests (testcontainers + Postgres) are not run in CI to keep the
+      # gate fast. Run them locally with `pnpm test:integration` before pushing.
+
+  deploy-preview:
+    name: Deploy preview
+    if: github.event_name == 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel@latest
+      - name: Pull Vercel project config (preview)
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build for preview
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy preview
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Comment preview URL on PR
+        if: github.event.pull_request.number
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: vercel-preview
+          message: |
+            Preview deployed: ${{ steps.deploy.outputs.url }}
+
+  deploy-prod:
+    name: Deploy production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel@latest
+      - name: Pull Vercel project config (production)
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build for production
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy production
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
