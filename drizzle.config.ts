@@ -1,5 +1,9 @@
 import { defineConfig } from "drizzle-kit";
-import "dotenv/config";
+import { config } from "dotenv";
+
+// Next.js convention: .env.local overrides .env. Load both, .env.local last so it wins.
+config({ path: ".env" });
+config({ path: ".env.local", override: true });
 
 export default defineConfig({
   schema: "./lib/db/schema.ts",
