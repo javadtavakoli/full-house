@@ -312,7 +312,7 @@ export type RoomSnapshot = {
   activeIssue: {
     issue: typeof issues.$inferSelect;
     currentEstimate: typeof estimates.$inferSelect;
-    votes: Array<{ userId: string; value: number }>;
+    votes: Array<{ userId: string; value?: number }>;
     isRevealed: boolean;
   } | null;
 };
@@ -343,7 +343,9 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
       activeIssue = {
         issue: active,
         currentEstimate: current,
-        votes: voteRows.map((v) => ({ userId: v.userId, value: Number(v.value) })),
+        votes: isRevealed
+          ? voteRows.map((v) => ({ userId: v.userId, value: Number(v.value) }))
+          : voteRows.map((v) => ({ userId: v.userId })),
         isRevealed,
       };
     }

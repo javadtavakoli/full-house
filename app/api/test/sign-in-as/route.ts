@@ -17,7 +17,7 @@ const Body = z.object({
 // Auth.js session-token cookie so subsequent requests authenticate as the
 // user. Used only by the Playwright E2E test harness.
 export async function POST(req: Request) {
-  if (process.env.E2E_TEST !== "1") {
+  if (process.env.NODE_ENV === "production" || process.env.E2E_TEST !== "1") {
     return NextResponse.json({ error: "disabled" }, { status: 404 });
   }
   const body = Body.parse(await req.json());

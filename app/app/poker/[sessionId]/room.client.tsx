@@ -23,7 +23,7 @@ type Snapshot = {
   activeIssue: {
     issue: { id: string; issueKey: string; summary: string; description: string | null; status: string };
     currentEstimate: { id: string; round: number; kind: "sp" | "duration"; phase: string | null };
-    votes: Array<{ userId: string; value: number }>;
+    votes: Array<{ userId: string; value?: number }>;
     isRevealed: boolean;
   } | null;
 };
@@ -70,7 +70,7 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
   const votedUserIds = useMemo(() => new Set((active?.votes ?? []).map((v) => v.userId)), [active]);
   const suggestion = useMemo(() => {
     if (!active || !active.isRevealed) return null;
-    const vals = active.votes.map((v) => v.value);
+    const vals = active.votes.map((v) => v.value).filter((v): v is number => typeof v === "number");
     return kind === "sp" ? suggestSp(vals) : suggestDuration(vals);
   }, [active, kind]);
 
@@ -185,7 +185,7 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
           )}
 
           {active.isRevealed && (
-            <RevealPanel votes={active.votes} suggestion={suggestion} members={snap.members} unit={unit as "" | "h"} />
+            <RevealPanel votes={active.votes.filter((v): v is { userId: string; value: number } => typeof v.value === "number")} suggestion={suggestion} members={snap.members} unit={unit as "" | "h"} />
           )}
 
           {isModerator && (
