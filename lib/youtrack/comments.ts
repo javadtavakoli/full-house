@@ -1,10 +1,11 @@
-import { youtrackFetch } from "./client";
+import { youtrackApi } from "./api";
 
-export async function postIssueComment(token: string, issueKey: string, text: string): Promise<{ id: string }> {
-  return youtrackFetch<{ id: string }>(`/api/issues/${issueKey}/comments`, {
-    token,
-    method: "POST",
-    query: { fields: "id,text" },
-    body: { text },
-  });
+export async function postIssueComment(
+  token: string,
+  issueKey: string,
+  text: string,
+): Promise<{ id: string }> {
+  const yt = youtrackApi(token);
+  const r = await yt.addComment(issueKey, text);
+  return { id: r.id };
 }

@@ -1,11 +1,9 @@
-import { youtrackFetch } from "./client";
+import { youtrackApi } from "./api";
 
 export type YtBoard = { id: string; name: string };
 
 export async function listBoards(token: string): Promise<YtBoard[]> {
-  const data = await youtrackFetch<YtBoard[]>("/api/agiles", {
-    token,
-    query: { fields: "id,name" },
-  });
-  return data;
+  const yt = youtrackApi(token);
+  const data = await yt.request("GET", "/agiles", { query: { fields: "id,name" } });
+  return data as YtBoard[];
 }

@@ -4,9 +4,6 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   AUTH_SECRET: z.string().min(32),
   YT_BASE_URL: z.string().url(),
-  YT_OAUTH_CLIENT_ID: z.string().min(1),
-  YT_OAUTH_CLIENT_SECRET: z.string().min(1),
-  YT_OAUTH_REDIRECT_URI: z.string().url(),
   YT_TOKEN_ENC_KEY: z.string().refine(
     (v) => Buffer.from(v, "base64").length === 32,
     "must be a base64-encoded 32-byte key",

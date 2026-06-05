@@ -10,9 +10,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   callbacks: {
     ...authConfig.callbacks,
-    async signIn({ user, account, profile }) {
-      if (!account || account.provider !== "youtrack" || !profile) return false;
-      const youtrackId = String((profile as { id?: string }).id ?? user.id);
+    async signIn({ user, account, credentials }) {
+      if (account?.provider !== "credentials") return false;
+      const raw = (credentials as { token?: unknown } | undefined)?.token;
+      const token = typeof raw === "string" ? raw.trim() : "";
+      if (!token) return false;
+      const youtrackId = String((user as { id?: string }).id ?? "");
+      if (!youtrackId) return false;
+
       const [existing] = await db.select().from(users).where(eq(users.youtrackId, youtrackId)).limit(1);
       const userRow =
         existing ??
@@ -26,26 +31,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           })
           .returning())[0]!;
 
+      // PATs don't expire — store a far-future sentinel.
+      const farFuture = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      const encryptedToken = encrypt(token, env.YT_TOKEN_ENC_KEY);
       await db
         .insert(oauthAccounts)
         .values({
           userId: userRow.id,
           provider: "youtrack",
-          accessToken: encrypt(account.access_token ?? "", env.YT_TOKEN_ENC_KEY),
-          refreshToken: account.refresh_token ? encrypt(account.refresh_token, env.YT_TOKEN_ENC_KEY) : null,
-          expiresAt: new Date((account.expires_at ?? Math.floor(Date.now() / 1000) + 3600) * 1000),
-          scope: account.scope ?? "YouTrack",
+          accessToken: encryptedToken,
+          refreshToken: null,
+          expiresAt: farFuture,
+          scope: "PAT",
         })
         .onConflictDoUpdate({
           target: [oauthAccounts.userId, oauthAccounts.provider],
-          set: {
-            accessToken: encrypt(account.access_token ?? "", env.YT_TOKEN_ENC_KEY),
-            refreshToken: account.refresh_token ? encrypt(account.refresh_token, env.YT_TOKEN_ENC_KEY) : null,
-            expiresAt: new Date((account.expires_at ?? Math.floor(Date.now() / 1000) + 3600) * 1000),
-            scope: account.scope ?? "YouTrack",
-          },
+          set: { accessToken: encryptedToken, expiresAt: farFuture, scope: "PAT" },
         });
-
       return true;
     },
     async jwt({ token, user }) {

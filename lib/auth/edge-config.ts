@@ -1,14 +1,44 @@
 import type { NextAuthConfig } from "next-auth";
-import { YoutrackProvider } from "./youtrack-provider";
+import Credentials from "next-auth/providers/credentials";
+import { createApi } from "trackpilot";
 
 export const authConfig = {
   secret: process.env.AUTH_SECRET,
   session: { strategy: "jwt" as const },
   providers: [
-    YoutrackProvider({
-      clientId: process.env.YT_OAUTH_CLIENT_ID ?? "",
-      clientSecret: process.env.YT_OAUTH_CLIENT_SECRET ?? "",
-      workspaceBaseUrl: process.env.YT_BASE_URL ?? "",
+    Credentials({
+      name: "YouTrack",
+      credentials: {
+        token: { label: "Personal access token", type: "password" },
+      },
+      async authorize(creds) {
+        const token = typeof creds?.token === "string" ? creds.token.trim() : "";
+        if (!token) return null;
+        const baseUrl = (process.env.YT_BASE_URL ?? "").replace(/\/$/, "");
+        if (!baseUrl) return null;
+        try {
+          const yt = createApi({ baseUrl, token });
+          const me = await yt.me();
+          // me has { name, login } — we need an identity. Fetch /users/me with avatar/email via request().
+          const profile = (await yt.request("GET", "/users/me", {
+            query: { fields: "id,login,name,email,avatarUrl" },
+          })) as {
+            id: string;
+            login: string;
+            name: string;
+            email: string;
+            avatarUrl: string | null;
+          };
+          return {
+            id: profile.id,
+            name: profile.name ?? me.name,
+            email: profile.email,
+            image: profile.avatarUrl,
+          };
+        } catch {
+          return null;
+        }
+      },
     }),
   ],
   pages: { signIn: "/login" },

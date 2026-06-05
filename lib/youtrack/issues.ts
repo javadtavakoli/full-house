@@ -1,4 +1,4 @@
-import { youtrackFetch } from "./client";
+import { youtrackApi } from "./api";
 
 export type YtIssue = {
   id: string;
@@ -22,15 +22,10 @@ export async function listSprintIssues(
   sprintId: string,
   opts: { excludeStates: string[] },
 ): Promise<YtIssue[]> {
-  const data = await youtrackFetch<{ issues: RawIssue[] }>(
-    `/api/agiles/${boardId}/sprints/${sprintId}`,
-    {
-      token,
-      query: {
-        fields: "issues(id,idReadable,summary,description,customFields(name,value(name)))",
-      },
-    },
-  );
+  const yt = youtrackApi(token);
+  const data = (await yt.request("GET", `/agiles/${boardId}/sprints/${sprintId}`, {
+    query: { fields: "issues(id,idReadable,summary,description,customFields(name,value(name)))" },
+  })) as { issues?: RawIssue[] };
   const exclude = new Set(opts.excludeStates);
   return (data.issues ?? [])
     .map((i) => ({
@@ -49,10 +44,6 @@ export async function updateIssueField(
   fieldName: string,
   value: number | string | null,
 ): Promise<void> {
-  await youtrackFetch(`/api/issues/${issueKey}`, {
-    token,
-    method: "POST",
-    query: { fields: "customFields(name,value)" },
-    body: { customFields: [{ name: fieldName, value }] },
-  });
+  const yt = youtrackApi(token);
+  await yt.setCustomFields(issueKey, [{ name: fieldName, value }]);
 }

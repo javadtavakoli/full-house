@@ -1,4 +1,4 @@
-import { youtrackFetch } from "./client";
+import { youtrackApi } from "./api";
 
 export type YtSprint = {
   id: string;
@@ -9,11 +9,11 @@ export type YtSprint = {
 };
 
 export async function listSprints(token: string, boardId: string): Promise<YtSprint[]> {
-  const data = await youtrackFetch<YtSprint[]>(`/api/agiles/${boardId}/sprints`, {
-    token,
+  const yt = youtrackApi(token);
+  const data = await yt.request("GET", `/agiles/${boardId}/sprints`, {
     query: { fields: "id,name,archived,start,finish" },
   });
-  return data.filter((s) => !s.archived);
+  return (data as YtSprint[]).filter((s) => !s.archived);
 }
 
 export function pickDefaultSprint(sprints: YtSprint[], nowMs: number): YtSprint | null {
