@@ -1,11 +1,10 @@
 import { db } from "@/lib/db/client";
-import { issues } from "@/lib/db/schema";
+import { issues, sessions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { gatherSummary, logYoutrackPost } from "./service";
+import { conventionsForSession, gatherSummary, logYoutrackPost } from "./service";
 import { formatSummaryComment } from "./comment-formatter";
 import { updateIssueField } from "@/lib/youtrack/issues";
 import { postIssueComment } from "@/lib/youtrack/comments";
-import { youtrackConfig } from "@/lib/youtrack/config";
 import { logger } from "@/lib/logger";
 
 export type SyncResult = {
@@ -15,9 +14,11 @@ export type SyncResult = {
 };
 
 export async function syncIssue(issueId: string, token: string): Promise<SyncResult> {
-  const cfg = youtrackConfig();
   const [issue] = await db.select().from(issues).where(eq(issues.id, issueId)).limit(1);
   if (!issue) throw new Error("issue not found");
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, issue.sessionId)).limit(1);
+  if (!session) throw new Error("session not found");
+  const { spField, durationField } = conventionsForSession(session);
   const summary = await gatherSummary(issueId);
 
   const result: SyncResult = {
@@ -26,14 +27,14 @@ export async function syncIssue(issueId: string, token: string): Promise<SyncRes
     comment: { ok: true },
   };
 
-  // SP field
-  if (!summary.sp.skipped && summary.sp.final !== null) {
+  // SP field — skip silently if no field discovered/configured
+  if (!summary.sp.skipped && summary.sp.final !== null && spField) {
     try {
-      await updateIssueField(token, issue.issueKey, cfg.spField, summary.sp.final);
+      await updateIssueField(token, issue.issueKey, spField, summary.sp.final);
       await logYoutrackPost({
         issueId,
         kind: "sp_field",
-        request: { field: cfg.spField, value: summary.sp.final },
+        request: { field: spField, value: summary.sp.final },
         response: null,
         status: "success",
       });
@@ -42,7 +43,7 @@ export async function syncIssue(issueId: string, token: string): Promise<SyncRes
       await logYoutrackPost({
         issueId,
         kind: "sp_field",
-        request: { field: cfg.spField, value: summary.sp.final },
+        request: { field: spField, value: summary.sp.final },
         response: { error: (e as Error).message },
         status: "failed",
       });
@@ -51,16 +52,17 @@ export async function syncIssue(issueId: string, token: string): Promise<SyncRes
   }
 
   // Duration field — sum non-skipped phases; only write if at least one phase is non-skipped
+  // AND a duration field is known
   const phases = [summary.duration.impl, summary.duration.review, summary.duration.test];
   const anyNonSkipped = phases.some((p) => !p.skipped && p.final !== null);
-  if (anyNonSkipped) {
+  if (anyNonSkipped && durationField) {
     const total = phases.reduce((s, p) => s + (p.final ?? 0), 0);
     try {
-      await updateIssueField(token, issue.issueKey, cfg.durationField, total);
+      await updateIssueField(token, issue.issueKey, durationField, total);
       await logYoutrackPost({
         issueId,
         kind: "duration_field",
-        request: { field: cfg.durationField, value: total },
+        request: { field: durationField, value: total },
         response: null,
         status: "success",
       });
@@ -69,7 +71,7 @@ export async function syncIssue(issueId: string, token: string): Promise<SyncRes
       await logYoutrackPost({
         issueId,
         kind: "duration_field",
-        request: { field: cfg.durationField, value: total },
+        request: { field: durationField, value: total },
         response: { error: (e as Error).message },
         status: "failed",
       });

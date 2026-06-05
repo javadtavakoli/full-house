@@ -34,6 +34,9 @@ export const sessions = pgTable("sessions", {
   status: text("status").notNull().default("active"), // 'active' | 'ended'
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
+  spField: text("sp_field"),
+  durationField: text("duration_field"),
+  doneStateNames: text("done_state_names").array(),
   teamId: uuid("team_id"), // v3 placeholder
 });
 

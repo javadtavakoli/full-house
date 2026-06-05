@@ -15,6 +15,13 @@
       "when": 1779720645334,
       "tag": "0001_init_poker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780698212735,
+      "tag": "0002_discover_conventions",
+      "breakpoints": true
     }
   ]
 }

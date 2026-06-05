@@ -2,8 +2,8 @@ import { env } from "@/lib/env";
 
 export type YoutrackConfig = {
   baseUrl: string;
-  spField: string;
-  durationField: string;
+  spField: string | undefined;
+  durationField: string | undefined;
   doneStateNames: string[];
 };
 

@@ -1,11 +1,15 @@
 import { eq, and, desc, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { sessions, sessionMembers, issues, users, estimates, votes, youtrackPosts } from "@/lib/db/schema";
-import { listSprintIssues } from "@/lib/youtrack/issues";
+import { youtrackApi } from "@/lib/youtrack/api";
 import { youtrackConfig } from "@/lib/youtrack/config";
+import { discoverConventions, type RawIssue } from "@/lib/youtrack/discover";
 import { reduceIssue, phaseOfStatus, type IssueStatus } from "./state-machine";
 import { isValidCard } from "./decks";
 import type { SummaryInput } from "./comment-formatter";
+
+const SPRINT_ISSUES_FIELDS =
+  "issues(id,idReadable,summary,description,customFields(name,projectCustomField(field(fieldType(id))),value(name,isResolved)))";
 
 export async function createSession(opts: {
   creatorUserId: string;
@@ -15,8 +19,26 @@ export async function createSession(opts: {
   sprintName: string;
 }) {
   const cfg = youtrackConfig();
-  const ytIssues = await listSprintIssues(opts.token, opts.boardId, opts.sprintId, {
-    excludeStates: cfg.doneStateNames,
+  const yt = youtrackApi(opts.token);
+
+  const raw = (await yt.request("GET", `/agiles/${opts.boardId}/sprints/${opts.sprintId}`, {
+    query: { fields: SPRINT_ISSUES_FIELDS },
+  })) as { issues?: RawIssue[] };
+
+  const rawIssues = raw.issues ?? [];
+  const conventions = discoverConventions(rawIssues, {
+    spField: cfg.spField,
+    durationField: cfg.durationField,
+    doneStateNames: cfg.doneStateNames,
+  });
+
+  const exclude = new Set(conventions.doneStateNames);
+  const ytIssues = rawIssues.filter((i) => {
+    const state = i.customFields.find((f) =>
+      f.projectCustomField?.field?.fieldType?.id?.startsWith("state"),
+    );
+    const stateName = (state?.value as { name?: string } | null)?.name ?? null;
+    return !(stateName && exclude.has(stateName));
   });
 
   return db.transaction(async (tx) => {
@@ -27,6 +49,9 @@ export async function createSession(opts: {
         boardId: opts.boardId,
         sprintId: opts.sprintId,
         sprintName: opts.sprintName,
+        spField: conventions.spField ?? null,
+        durationField: conventions.durationField ?? null,
+        doneStateNames: conventions.doneStateNames.length > 0 ? conventions.doneStateNames : null,
       })
       .returning();
     if (!session) throw new Error("session insert failed");
@@ -42,7 +67,7 @@ export async function createSession(opts: {
         ytIssues.map((i, idx) => ({
           sessionId: session.id,
           youtrackIssueId: i.id,
-          issueKey: i.key,
+          issueKey: i.idReadable,
           summary: i.summary,
           description: i.description,
           position: idx,
@@ -52,6 +77,22 @@ export async function createSession(opts: {
 
     return session;
   });
+}
+
+export function conventionsForSession(session: typeof sessions.$inferSelect): {
+  spField: string | undefined;
+  durationField: string | undefined;
+  doneStateNames: string[];
+} {
+  const cfg = youtrackConfig();
+  return {
+    spField: session.spField ?? cfg.spField,
+    durationField: session.durationField ?? cfg.durationField,
+    doneStateNames:
+      session.doneStateNames && session.doneStateNames.length > 0
+        ? session.doneStateNames
+        : cfg.doneStateNames,
+  };
 }
 
 export async function joinSession(sessionId: string, userId: string) {
