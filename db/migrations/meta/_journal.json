@@ -29,6 +29,13 @@
       "when": 1780738007993,
       "tag": "0003_session_candidates",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780740588479,
+      "tag": "0004_abstain_votes",
+      "breakpoints": true
     }
   ]
 }

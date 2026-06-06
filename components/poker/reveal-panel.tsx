@@ -1,10 +1,14 @@
 type Member = { userId: string; displayName: string };
+type Vote = { userId: string; value: number | null };
+
 export function RevealPanel({
   votes, suggestion, members, unit,
-}: { votes: Array<{ userId: string; value: number }>; suggestion: number | null; members: Member[]; unit: "" | "h" }) {
+}: { votes: Vote[]; suggestion: number | null; members: Member[]; unit: "" | "h" }) {
   const nameOf = (id: string) => members.find((m) => m.userId === id)?.displayName ?? "?";
+  const numbered = votes.filter((v): v is { userId: string; value: number } => typeof v.value === "number");
+  const abstainers = votes.filter((v) => v.value === null);
   const byValue = new Map<number, string[]>();
-  for (const v of votes) {
+  for (const v of numbered) {
     const list = byValue.get(v.value) ?? [];
     list.push(nameOf(v.userId));
     byValue.set(v.value, list);
@@ -25,6 +29,11 @@ export function RevealPanel({
           </div>
         ))}
       </div>
+      {abstainers.length > 0 && (
+        <div className="text-xs text-muted-foreground text-center italic">
+          Abstained: {abstainers.map((v) => nameOf(v.userId)).join(", ")}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { users, oauthAccounts, sessions, sessionMembers } from "@/lib/db/schema";
 import { encrypt } from "@/lib/encryption";
 import { env } from "@/lib/env";
+import { broadcastMemberUpdated } from "@/lib/pusher/server";
 import { eq } from "drizzle-orm";
 
 type CandidateRow = {
@@ -57,6 +58,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .insert(sessionMembers)
           .values({ sessionId, userId: voterRow.id, role: "voter" })
           .onConflictDoNothing();
+        // Fire-and-forget — let the moderator's room refresh and see the new face.
+        broadcastMemberUpdated(sessionId).catch(() => {});
 
         return true;
       }

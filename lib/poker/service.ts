@@ -161,7 +161,12 @@ export async function pickIssue(sessionId: string, issueId: string, moderatorUse
   });
 }
 
-export async function castVote(sessionId: string, issueId: string, userId: string, value: number) {
+export async function castVote(
+  sessionId: string,
+  issueId: string,
+  userId: string,
+  value: number | null,
+) {
   return db.transaction(async (tx) => {
     await assertMember(tx, sessionId, userId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
@@ -169,17 +174,18 @@ export async function castVote(sessionId: string, issueId: string, userId: strin
     const { kind } = phaseOfStatus(issue.status as IssueStatus);
     if (!kind) throw new Error("not in a voting phase");
     if (!issue.status.endsWith("_voting")) throw new Error(`cannot vote in ${issue.status}`);
-    if (!isValidCard(value, kind)) throw new Error(`invalid ${kind} card: ${value}`);
+    if (value !== null && !isValidCard(value, kind)) throw new Error(`invalid ${kind} card: ${value}`);
 
     const current = await currentEstimate(tx, issueId);
     if (!current) throw new Error("no current estimate row");
 
+    const storedValue = value === null ? null : String(value);
     await tx
       .insert(votes)
-      .values({ estimateId: current.id, userId, value: String(value) })
+      .values({ estimateId: current.id, userId, value: storedValue })
       .onConflictDoUpdate({
         target: [votes.estimateId, votes.userId],
-        set: { value: String(value), castAt: new Date() },
+        set: { value: storedValue, castAt: new Date() },
       });
   });
 }
@@ -253,7 +259,21 @@ export async function submitFinal(sessionId: string, issueId: string, moderatorU
     await assertModerator(tx, sessionId, moderatorUserId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue) throw new Error("issue not found");
-    if (!issue.status.endsWith("_revealed")) throw new Error(`cannot submit from ${issue.status}`);
+    if (!issue.status.endsWith("_revealed")) {
+      // Idempotency: if the most recently decided estimate for this issue was decided
+      // within the last 5 seconds, this is a duplicate submit (e.g., double-click or
+      // a retry that raced the broadcast). Silently succeed instead of 500-ing.
+      const [recent] = await tx
+        .select()
+        .from(estimates)
+        .where(eq(estimates.issueId, issueId))
+        .orderBy(desc(estimates.decidedAt))
+        .limit(1);
+      if (recent && recent.decidedAt && Date.now() - recent.decidedAt.getTime() < 5_000) {
+        return { status: issue.status as IssueStatus, round: 1 };
+      }
+      throw new Error(`cannot submit from ${issue.status}`);
+    }
 
     const current = await currentEstimate(tx, issueId);
     if (!current) throw new Error("no current estimate");
@@ -366,7 +386,9 @@ export type RoomSnapshot = {
   activeIssue: {
     issue: typeof issues.$inferSelect;
     currentEstimate: typeof estimates.$inferSelect;
-    votes: Array<{ userId: string; value?: number }>;
+    // Pre-reveal: { userId } only (value redacted).
+    // Post-reveal: value is a number, or `null` when the voter abstained.
+    votes: Array<{ userId: string; value?: number | null }>;
     isRevealed: boolean;
   } | null;
 };
@@ -398,7 +420,10 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
         issue: active,
         currentEstimate: current,
         votes: isRevealed
-          ? voteRows.map((v) => ({ userId: v.userId, value: Number(v.value) }))
+          ? voteRows.map((v) => ({
+              userId: v.userId,
+              value: v.value === null ? null : Number(v.value),
+            }))
           : voteRows.map((v) => ({ userId: v.userId })),
         isRevealed,
       };
@@ -451,7 +476,10 @@ export async function gatherSummary(issueId: string): Promise<SummaryInput> {
       skipped: latest.finalValue === null,
       final: latest.finalValue !== null ? Number(latest.finalValue) : null,
       rounds: allRounds.get(key) ?? 1,
-      votes: voteRows.map((v) => ({ user: nameOf(v.userId), value: Number(v.value) })),
+      // Abstainers (value === null) don't enter the numeric grouping in the comment.
+      votes: voteRows
+        .filter((v) => v.value !== null)
+        .map((v) => ({ user: nameOf(v.userId), value: Number(v.value) })),
     };
   }
 

@@ -24,7 +24,7 @@ type Snapshot = {
   activeIssue: {
     issue: { id: string; issueKey: string; summary: string; description: string | null; status: string };
     currentEstimate: { id: string; round: number; kind: "sp" | "duration"; phase: string | null };
-    votes: Array<{ userId: string; value?: number }>;
+    votes: Array<{ userId: string; value?: number | null }>;
     isRevealed: boolean;
   } | null;
 };
@@ -39,6 +39,8 @@ export function RoomClient({
   const router = useRouter();
   const [snap, setSnap] = useState<Snapshot>(initialSnapshot);
   const [myCard, setMyCard] = useState<number | null>(null);
+  const [abstained, setAbstained] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   usePresencePing(initialSnapshot.session.id);
 
@@ -70,8 +72,15 @@ export function RoomClient({
 
   useSessionRoom(snap.session.id, onEvent);
 
+  // Periodic refresh so the moderator picks up lastSeenAt freshness even
+  // when no action events fire (presence pings don't broadcast).
+  useEffect(() => {
+    const id = setInterval(() => { void refresh(); }, 20_000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
   // reset card when active issue or phase changes
-  useEffect(() => { setMyCard(null); }, [active?.issue.id, status]);
+  useEffect(() => { setMyCard(null); setAbstained(false); }, [active?.issue.id, status]);
 
   const votedUserIds = useMemo(() => new Set((active?.votes ?? []).map((v) => v.userId)), [active]);
   const suggestion = useMemo(() => {
@@ -92,10 +101,30 @@ export function RoomClient({
   async function vote(v: number) {
     if (!active) return;
     setMyCard(v);
+    setAbstained(false);
     if (!(await post("/vote", { issueId: active.issue.id, value: v }))) setMyCard(null);
   }
+  async function abstain() {
+    if (!active) return;
+    const prevAbstained = abstained;
+    const prevCard = myCard;
+    setAbstained(true);
+    setMyCard(null);
+    if (!(await post("/vote", { issueId: active.issue.id, value: null }))) {
+      setAbstained(prevAbstained);
+      setMyCard(prevCard);
+    }
+  }
   async function reveal() { if (active) await post("/reveal", { issueId: active.issue.id }); }
-  async function submit(v: number) { if (active) await post("/submit", { issueId: active.issue.id, finalValue: v }); }
+  async function submit(v: number) {
+    if (!active || submitting) return;
+    setSubmitting(true);
+    try {
+      await post("/submit", { issueId: active.issue.id, finalValue: v });
+    } finally {
+      setSubmitting(false);
+    }
+  }
   async function revote() { if (active) await post("/revote", { issueId: active.issue.id }); }
   async function skipPhase() { if (active) await post("/skip-phase", { issueId: active.issue.id }); }
   async function skipIssue() { if (active) await post("/skip-issue", { issueId: active.issue.id }); }
@@ -189,10 +218,10 @@ export function RoomClient({
           <VoterList members={snap.members} votedUserIds={votedUserIds} moderatorId={moderatorId} />
 
           {!active.isRevealed && (
-            <div>
+            <div className="flex flex-col items-center gap-3">
               {kind === "sp" ? (
                 <>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground text-center mb-2">Your card</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground text-center">Your card</p>
                   <CardDeck deck={SP_DECK} selected={myCard} onPick={vote} disabled={false} />
                 </>
               ) : (
@@ -203,11 +232,24 @@ export function RoomClient({
                   phaseLabel={phase ?? ""}
                 />
               )}
+              <Button
+                variant={abstained ? "secondary" : "ghost"}
+                size="sm"
+                onClick={abstain}
+                className="text-xs"
+              >
+                {abstained ? "No opinion ✓" : "I have no opinion"}
+              </Button>
             </div>
           )}
 
           {active.isRevealed && (
-            <RevealPanel votes={active.votes.filter((v): v is { userId: string; value: number } => typeof v.value === "number")} suggestion={suggestion} members={snap.members} unit={unit as "" | "h"} />
+            <RevealPanel
+              votes={active.votes.map((v) => ({ userId: v.userId, value: v.value ?? null }))}
+              suggestion={suggestion}
+              members={snap.members}
+              unit={unit as "" | "h"}
+            />
           )}
 
           {isModerator && (
@@ -215,6 +257,7 @@ export function RoomClient({
               status={status}
               kind={kind}
               suggestion={suggestion}
+              submitting={submitting}
               onReveal={reveal}
               onSubmit={submit}
               onRevote={revote}

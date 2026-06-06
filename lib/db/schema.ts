@@ -90,7 +90,8 @@ export const votes = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     estimateId: uuid("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id),
-    value: numeric("value").notNull(),
+    // Nullable: null = abstain ("no opinion") — voter is present but skipped.
+    value: numeric("value"),
     castAt: timestamp("cast_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

@@ -4,7 +4,7 @@ import { getServerUser } from "@/lib/auth/session";
 import { castVote } from "@/lib/poker/service";
 import { broadcastVoteCast } from "@/lib/pusher/server";
 
-const Body = z.object({ issueId: z.string().uuid(), value: z.number() });
+const Body = z.object({ issueId: z.string().uuid(), value: z.number().nullable() });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

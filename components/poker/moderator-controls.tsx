@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export function ModeratorControls({
-  status, kind, suggestion, onReveal, onSubmit, onRevote, onSkipPhase, onSkipIssue, onEnd,
+  status, kind, suggestion, submitting = false, onReveal, onSubmit, onRevote, onSkipPhase, onSkipIssue, onEnd,
 }: {
   status: string;
   kind: "sp" | "duration" | null;
   suggestion: number | null;
+  submitting?: boolean;
   onReveal: () => void;
   onSubmit: (v: number) => void;
   onRevote: () => void;
@@ -43,21 +44,27 @@ export function ModeratorControls({
                 step={0.5}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                disabled={submitting}
                 className="w-24"
               />
-              <Button onClick={submitDraft} disabled={draft === ""}>Submit</Button>
+              <Button onClick={submitDraft} disabled={submitting || draft === ""}>
+                {submitting ? "Submitting…" : "Submit"}
+              </Button>
             </div>
           ) : (
-            <Button onClick={() => suggestion !== null && onSubmit(suggestion)} disabled={suggestion === null}>
-              Submit {suggestion ?? "?"}
+            <Button
+              onClick={() => suggestion !== null && onSubmit(suggestion)}
+              disabled={submitting || suggestion === null}
+            >
+              {submitting ? "Submitting…" : `Submit ${suggestion ?? "?"}`}
             </Button>
           )}
-          <Button variant="outline" onClick={onRevote}>Revote</Button>
+          <Button variant="outline" onClick={onRevote} disabled={submitting}>Revote</Button>
         </>
       )}
-      <Button variant="outline" onClick={onSkipPhase}>Skip phase</Button>
-      <Button variant="outline" onClick={onSkipIssue}>Skip issue</Button>
-      <Button variant="destructive" onClick={onEnd}>End session</Button>
+      <Button variant="outline" onClick={onSkipPhase} disabled={submitting}>Skip phase</Button>
+      <Button variant="outline" onClick={onSkipIssue} disabled={submitting}>Skip issue</Button>
+      <Button variant="destructive" onClick={onEnd} disabled={submitting}>End session</Button>
     </div>
   );
 }
