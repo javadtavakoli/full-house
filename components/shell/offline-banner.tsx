@@ -17,7 +17,7 @@ export function OfflineBanner() {
   if (online) return null;
   return (
     <div className="bg-yellow-100 border-b border-yellow-300 text-yellow-900 px-4 py-2 text-sm text-center">
-      You're offline. Live updates are paused; actions will fail until you reconnect.
+      You&apos;re offline. Live updates are paused; actions will fail until you reconnect.
     </div>
   );
 }

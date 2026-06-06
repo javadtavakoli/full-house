@@ -9,6 +9,7 @@ export default defineConfig({
     setupFiles: ["./tests/integration/env-setup.ts", "./tests/integration/setup.ts"],
     testTimeout: 60_000,
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    // Vitest 4: hoisted from `poolOptions.forks.singleFork`
+    forks: { singleFork: true },
   },
 });
