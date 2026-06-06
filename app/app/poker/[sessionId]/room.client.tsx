@@ -7,16 +7,26 @@ import { usePresencePing } from "@/hooks/use-presence-ping";
 import { CardDeck } from "@/components/poker/card-deck";
 import { VoterList } from "@/components/poker/voter-list";
 import { RevealPanel } from "@/components/poker/reveal-panel";
-import { ModeratorControls } from "@/components/poker/moderator-controls";
+import { ModeratorControls, type GotoTarget } from "@/components/poker/moderator-controls";
 import { IssueCard } from "@/components/poker/issue-card";
 import { RoundBadge } from "@/components/poker/round-badge";
 import { PhaseStepper } from "@/components/poker/phase-stepper";
 import { DurationInput } from "@/components/poker/duration-input";
-import { SendToYoutrackDialog } from "@/components/poker/send-to-youtrack-dialog";
+import {
+  SendAllToYoutrackDialog,
+  type ReviewIssue,
+} from "@/components/poker/send-all-to-youtrack-dialog";
 import { SP_DECK } from "@/lib/poker/decks";
 import { suggestSp, suggestDuration } from "@/lib/poker/suggestion";
 import { phaseOfStatus } from "@/lib/poker/state-machine";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Snapshot = {
   session: { id: string; sprintName: string; createdBy: string; status: string };
@@ -30,6 +40,14 @@ type Snapshot = {
   } | null;
 };
 
+// Options shown in the per-row "Back to…" select on completed issues.
+const BACK_TO_OPTIONS: Array<{ value: GotoTarget; label: string }> = [
+  { value: "sp", label: "Story points" },
+  { value: "impl", label: "Implementation" },
+  { value: "review", label: "Review" },
+  { value: "test", label: "Test" },
+];
+
 export function RoomClient({
   initialSnapshot, currentUserId, youtrackBaseUrl,
 }: {
@@ -42,7 +60,7 @@ export function RoomClient({
   const [myCard, setMyCard] = useState<number | null>(null);
   const [abstained, setAbstained] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [sendDialogIssue, setSendDialogIssue] = useState<{ id: string; key: string } | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   usePresencePing(initialSnapshot.session.id);
 
@@ -130,12 +148,34 @@ export function RoomClient({
   async function revote() { if (active) await post("/revote", { issueId: active.issue.id }); }
   async function skipPhase() { if (active) await post("/skip-phase", { issueId: active.issue.id }); }
   async function skipIssue() { if (active) await post("/skip-issue", { issueId: active.issue.id }); }
-  async function endSession() {
-    const r = await fetch(`/api/sessions/${snap.session.id}`, { method: "DELETE" });
-    if (!r.ok) toast.error(await r.text());
+
+  // gotoPhase is callable for either the active issue (from ModeratorControls)
+  // or a completed issue (from the per-row select). Accept the issueId explicitly
+  // so the completed-list control can target a non-active issue.
+  async function gotoPhase(issueId: string, target: GotoTarget) {
+    await post("/goto-phase", { issueId, target });
+  }
+
+  // The "End session" button no longer deletes the session immediately — it opens
+  // the review dialog, which contains both Send-and-end and End-without-sending.
+  function endSession() {
+    setReviewOpen(true);
   }
 
   const pending = snap.issues.filter((i) => i.status === "pending");
+  const completedIssues = snap.issues.filter((i) => i.status === "completed");
+  const skippedIssues = snap.issues.filter((i) => i.status === "skipped");
+  const reviewable: ReviewIssue[] = [...completedIssues, ...skippedIssues].map((i) => ({
+    id: i.id,
+    issueKey: i.issueKey,
+    summary: i.summary,
+    status: i.status,
+    syncStatus: i.syncStatus,
+  }));
+
+  // The header "Review & send" button is disabled when there's nothing to send.
+  // Skipped-only doesn't count — they're never written to YouTrack.
+  const hasSendable = completedIssues.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
@@ -148,6 +188,17 @@ export function RoomClient({
           <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(window.location.href); toast("URL copied"); }}>
             Copy invite URL
           </Button>
+          {isModerator && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReviewOpen(true)}
+              disabled={!hasSendable}
+              title={hasSendable ? "Review and send to YouTrack" : "Nothing to send yet"}
+            >
+              Review &amp; send
+            </Button>
+          )}
           {!isModerator && moderatorIsStale && (
             <Button size="sm" variant="outline" onClick={async () => {
               const r = await fetch(`/api/sessions/${snap.session.id}/takeover`, { method: "POST" });
@@ -161,7 +212,14 @@ export function RoomClient({
       {!active && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium">Pick an issue</h2>
-          {pending.length === 0 && <p className="text-sm text-muted-foreground">No more pending issues. <Button variant="link" onClick={endSession}>End session</Button></p>}
+          {pending.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No more pending issues.{" "}
+              {isModerator && (
+                <Button variant="link" onClick={endSession}>End session</Button>
+              )}
+            </p>
+          )}
           <ul className="flex flex-col gap-1">
             {pending.map((i) => (
               <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2">
@@ -174,28 +232,50 @@ export function RoomClient({
       )}
 
       {!active && (() => {
-        const completed = snap.issues.filter((i) => i.status === "completed" || i.status === "skipped");
-        if (completed.length === 0) return null;
+        const completedAndSkipped = snap.issues.filter((i) => i.status === "completed" || i.status === "skipped");
+        if (completedAndSkipped.length === 0) return null;
         return (
           <section className="flex flex-col gap-2 mt-4">
             <h2 className="text-sm font-medium text-muted-foreground">Completed</h2>
             <ul className="flex flex-col gap-1">
-              {completed.map((i) => (
-                <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2 text-sm">
-                  <span className="opacity-70">{i.issueKey} — {i.summary} {i.status === "skipped" && <em className="text-xs text-muted-foreground">(skipped)</em>}</span>
-                  {isModerator && i.syncStatus === null && (
-                    <Button size="sm" onClick={() => setSendDialogIssue({ id: i.id, key: i.issueKey })}>
-                      Send to YouTrack
-                    </Button>
-                  )}
-                  {isModerator && i.syncStatus === "failed" && (
-                    <Button size="sm" variant="outline" onClick={() => setSendDialogIssue({ id: i.id, key: i.issueKey })}>
-                      Retry sync
-                    </Button>
-                  )}
-                  {i.syncStatus === "ok" && (
-                    <span className="text-xs text-emerald-700">Synced</span>
-                  )}
+              {completedAndSkipped.map((i) => (
+                <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2 text-sm gap-2">
+                  <span className="opacity-70 min-w-0 truncate">
+                    {i.issueKey} — {i.summary}{" "}
+                    {i.status === "skipped" && (
+                      <em className="text-xs text-muted-foreground">(skipped)</em>
+                    )}
+                  </span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    {/* Status badge */}
+                    {i.status === "skipped" ? (
+                      <span className="text-xs text-muted-foreground">skipped</span>
+                    ) : i.syncStatus === "ok" ? (
+                      <span className="text-xs text-emerald-700">sent</span>
+                    ) : i.syncStatus === "failed" ? (
+                      <span className="text-xs text-amber-700">failed</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">completed</span>
+                    )}
+                    {/* Moderator can re-open a completed issue at any phase */}
+                    {isModerator && i.status === "completed" && (
+                      <Select
+                        value=""
+                        onValueChange={(v) => gotoPhase(i.id, v as GotoTarget)}
+                      >
+                        <SelectTrigger className="w-32 h-8 text-xs">
+                          <SelectValue placeholder="Back to…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BACK_TO_OPTIONS.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -264,21 +344,26 @@ export function RoomClient({
               onSkipPhase={skipPhase}
               onSkipIssue={skipIssue}
               onEnd={endSession}
+              onGoto={(target) => gotoPhase(active.issue.id, target)}
             />
           )}
         </>
       )}
 
-      {sendDialogIssue && (
-        <SendToYoutrackDialog
-          open={!!sendDialogIssue}
-          onOpenChange={(v) => { if (!v) setSendDialogIssue(null); }}
-          sessionId={snap.session.id}
-          issueId={sendDialogIssue.id}
-          issueKey={sendDialogIssue.key}
-          onDone={() => { void refresh(); }}
-        />
-      )}
+      <SendAllToYoutrackDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        sessionId={snap.session.id}
+        issues={reviewable}
+        onDone={(opts) => {
+          void refresh();
+          if (opts?.ended) {
+            // session-ended Pusher event will also fire and route us back, but
+            // refresh covers the local-broadcast-suppressed case (E2E mode).
+            router.push("/app");
+          }
+        }}
+      />
     </div>
   );
 }

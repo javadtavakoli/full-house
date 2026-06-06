@@ -254,6 +254,30 @@ function notInState(states: string[]) {
   return sql`${issues.status} NOT IN (${sql.join(states.map((s) => sql`${s}`), sql`, `)})`;
 }
 
+/**
+ * Highest existing round for a given (issueId, kind, phase) — used when opening
+ * the estimate row for the next phase, to keep rounds monotonic even after a
+ * moderator jumps back to an earlier phase and re-advances. On a fresh first
+ * pass returns 1 (no prior rows). On re-advance returns previous_max + 1, so
+ * `gatherSummary`/`currentEstimate` (which prefer the highest round) read the
+ * new vote rather than the stale one.
+ */
+async function nextRoundFor(
+  tx: Tx,
+  issueId: string,
+  kind: "sp" | "duration",
+  phase: "impl" | "review" | "test" | null,
+): Promise<number> {
+  const phaseCond = phase === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phase);
+  const [highest] = await tx
+    .select()
+    .from(estimates)
+    .where(and(eq(estimates.issueId, issueId), eq(estimates.kind, kind), phaseCond))
+    .orderBy(desc(estimates.round))
+    .limit(1);
+  return (highest?.round ?? 0) + 1;
+}
+
 export async function submitFinal(sessionId: string, issueId: string, moderatorUserId: string, finalValue: number) {
   return db.transaction(async (tx) => {
     await assertModerator(tx, sessionId, moderatorUserId);
@@ -285,10 +309,13 @@ export async function submitFinal(sessionId: string, issueId: string, moderatorU
     const next = reduceIssue({ status: issue.status as IssueStatus, round: current.round }, { type: "submit" });
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
 
-    // Open the next estimate row if we advanced into a voting state
+    // Open the next estimate row if we advanced into a voting state.
+    // Use highest-existing-round + 1 so a re-advance after `gotoPhase` doesn't
+    // collide with the prior pass's round-1 row.
     const phase = phaseOfStatus(next.status);
     if (phase.kind && next.status.endsWith("_voting")) {
-      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round: 1 });
+      const round = await nextRoundFor(tx, issueId, phase.kind, phase.phase);
+      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round });
     }
     return next;
   });
@@ -310,7 +337,8 @@ export async function skipPhase(sessionId: string, issueId: string, moderatorUse
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     const phase = phaseOfStatus(next.status);
     if (phase.kind && next.status.endsWith("_voting")) {
-      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round: 1 });
+      const round = await nextRoundFor(tx, issueId, phase.kind, phase.phase);
+      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round });
     }
     return next;
   });
@@ -341,6 +369,48 @@ export async function startRevote(sessionId: string, issueId: string, moderatorU
       issueId, kind: current.kind, phase: current.phase, round: current.round + 1,
     });
     return next;
+  });
+}
+
+export async function gotoPhase(
+  sessionId: string,
+  issueId: string,
+  moderatorUserId: string,
+  target: "sp" | "impl" | "review" | "test",
+) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
+
+    // If some OTHER issue is currently in flight, refuse — only one in-flight at a time.
+    const inFlight = await tx
+      .select()
+      .from(issues)
+      .where(and(eq(issues.sessionId, sessionId), notInState(["pending", "completed", "skipped"])));
+    if (inFlight.length > 0 && inFlight[0]!.id !== issueId) {
+      throw new Error("another issue is already in progress; finish or skip it first");
+    }
+
+    const next = reduceIssue(
+      { status: issue.status as IssueStatus, round: 1 },
+      { type: "gotoPhase", target },
+    );
+    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+
+    // Destination (kind, phase)
+    const targetKind = target === "sp" ? "sp" : "duration";
+    const targetPhase: "impl" | "review" | "test" | null = target === "sp" ? null : target;
+
+    const newRound = await nextRoundFor(tx, issueId, targetKind, targetPhase);
+    await tx.insert(estimates).values({
+      issueId,
+      kind: targetKind,
+      phase: targetPhase,
+      round: newRound,
+    });
+
+    return { status: next.status, round: newRound };
   });
 }
 

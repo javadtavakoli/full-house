@@ -53,4 +53,46 @@ describe("state machine", () => {
     s = reduceIssue(s, { type: "submit" });
     expect(s.status).toBe("completed");
   });
+
+  describe("gotoPhase", () => {
+    it("jumps from completed back to sp_voting", () => {
+      const s = reduceIssue({ status: "completed", round: 1 }, { type: "gotoPhase", target: "sp" });
+      expect(s).toEqual({ status: "sp_voting", round: 1 });
+    });
+
+    it("jumps from dur_review_revealed back to sp_voting", () => {
+      const s = reduceIssue(
+        { status: "dur_review_revealed", round: 3 },
+        { type: "gotoPhase", target: "sp" },
+      );
+      expect(s).toEqual({ status: "sp_voting", round: 1 });
+    });
+
+    it("jumps from sp_voting forward to dur_test_voting", () => {
+      const s = reduceIssue(
+        { status: "sp_voting", round: 1 },
+        { type: "gotoPhase", target: "test" },
+      );
+      expect(s).toEqual({ status: "dur_test_voting", round: 1 });
+    });
+
+    it("targets each destination correctly", () => {
+      const base = { status: "completed" as const, round: 1 };
+      expect(reduceIssue(base, { type: "gotoPhase", target: "impl" }).status).toBe("dur_impl_voting");
+      expect(reduceIssue(base, { type: "gotoPhase", target: "review" }).status).toBe("dur_review_voting");
+      expect(reduceIssue(base, { type: "gotoPhase", target: "test" }).status).toBe("dur_test_voting");
+    });
+
+    it("rejects gotoPhase from pending", () => {
+      expect(() =>
+        reduceIssue({ status: "pending", round: 1 }, { type: "gotoPhase", target: "sp" }),
+      ).toThrow();
+    });
+
+    it("rejects gotoPhase from skipped", () => {
+      expect(() =>
+        reduceIssue({ status: "skipped", round: 1 }, { type: "gotoPhase", target: "sp" }),
+      ).toThrow();
+    });
+  });
 });

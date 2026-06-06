@@ -2,9 +2,47 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+export type GotoTarget = "sp" | "impl" | "review" | "test";
+
+const ALL_TARGETS: Array<{ value: GotoTarget; label: string }> = [
+  { value: "sp", label: "Story points" },
+  { value: "impl", label: "Implementation" },
+  { value: "review", label: "Review" },
+  { value: "test", label: "Test" },
+];
+
+/**
+ * Map an issue's status to the "phase" it sits in, so we can hide that option
+ * from the Back-to dropdown (going back to the current phase is what Revote does).
+ */
+function activeTarget(status: string): GotoTarget | null {
+  if (status.startsWith("sp_")) return "sp";
+  if (status.startsWith("dur_impl")) return "impl";
+  if (status.startsWith("dur_review")) return "review";
+  if (status.startsWith("dur_test")) return "test";
+  return null;
+}
 
 export function ModeratorControls({
-  status, kind, suggestion, submitting = false, onReveal, onSubmit, onRevote, onSkipPhase, onSkipIssue, onEnd,
+  status,
+  kind,
+  suggestion,
+  submitting = false,
+  onReveal,
+  onSubmit,
+  onRevote,
+  onSkipPhase,
+  onSkipIssue,
+  onEnd,
+  onGoto,
 }: {
   status: string;
   kind: "sp" | "duration" | null;
@@ -16,6 +54,7 @@ export function ModeratorControls({
   onSkipPhase: () => void;
   onSkipIssue: () => void;
   onEnd: () => void;
+  onGoto: (target: GotoTarget) => void;
 }) {
   const [draft, setDraft] = useState<string>(suggestion !== null ? String(suggestion) : "");
   useEffect(() => {
@@ -24,6 +63,12 @@ export function ModeratorControls({
 
   const isVoting = status.endsWith("_voting");
   const isRevealed = status.endsWith("_revealed");
+
+  const current = activeTarget(status);
+  // Hide the current phase from the dropdown — that's what Revote is for.
+  // `skipped` issues never render these controls; `completed` issues aren't active
+  // either (no controls visible), so the dropdown always has at least three options here.
+  const available = ALL_TARGETS.filter((t) => t.value !== current);
 
   function submitDraft() {
     const n = Number(draft);
@@ -64,6 +109,22 @@ export function ModeratorControls({
       )}
       <Button variant="outline" onClick={onSkipPhase} disabled={submitting}>Skip phase</Button>
       <Button variant="outline" onClick={onSkipIssue} disabled={submitting}>Skip issue</Button>
+      <Select
+        value=""
+        onValueChange={(v) => onGoto(v as GotoTarget)}
+        disabled={submitting}
+      >
+        <SelectTrigger className="w-36 h-9" disabled={submitting}>
+          <SelectValue placeholder="Back to…" />
+        </SelectTrigger>
+        <SelectContent>
+          {available.map((t) => (
+            <SelectItem key={t.value} value={t.value}>
+              {t.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Button variant="destructive" onClick={onEnd} disabled={submitting}>End session</Button>
     </div>
   );

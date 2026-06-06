@@ -19,7 +19,8 @@ export type Action =
   | { type: "submit" }
   | { type: "revote" }
   | { type: "skipPhase" }
-  | { type: "skipIssue" };
+  | { type: "skipIssue" }
+  | { type: "gotoPhase"; target: "sp" | "impl" | "review" | "test" };
 
 const NEXT_AFTER_PHASE: Partial<Record<IssueStatus, IssueStatus>> = {
   sp_voting: "dur_impl_voting",
@@ -76,6 +77,21 @@ export function reduceIssue(state: IssueState, action: Action): IssueState {
     case "skipIssue":
       if (state.status === "completed") throw new Error("cannot skip a completed issue");
       return { status: "skipped", round: state.round };
+    case "gotoPhase": {
+      // Allowed from any state except `pending` (no active issue) and `skipped`.
+      if (state.status === "pending" || state.status === "skipped") {
+        throw new Error(`cannot gotoPhase from ${state.status}`);
+      }
+      const next = (
+        action.target === "sp" ? "sp_voting" :
+        action.target === "impl" ? "dur_impl_voting" :
+        action.target === "review" ? "dur_review_voting" :
+        "dur_test_voting"
+      ) as IssueStatus;
+      // Reset round to 1 — the service computes the true (highest existing round + 1)
+      // for the destination phase from the estimates table.
+      return { status: next, round: 1 };
+    }
   }
 }
 
