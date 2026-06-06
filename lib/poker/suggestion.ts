@@ -1,4 +1,4 @@
-import { SP_DECK, DURATION_DECK } from "./decks";
+import { SP_DECK } from "./decks";
 
 export function suggestSp(votes: number[]): number | null {
   if (votes.length === 0) return null;
@@ -20,23 +20,10 @@ export function suggestSp(votes: number[]): number | null {
 export function suggestDuration(votes: number[]): number | null {
   if (votes.length === 0) return null;
   const avg = votes.reduce((a, b) => a + b, 0) / votes.length;
-  return snapToNearestRoundingUp(avg, DURATION_DECK);
+  return Math.round(avg * 2) / 2; // nearest 0.5
 }
 
 function snapUp(value: number, deck: readonly number[]): number {
   for (const c of deck) if (c >= value) return c;
   return deck[deck.length - 1]!;
-}
-
-function snapToNearestRoundingUp(value: number, deck: readonly number[]): number {
-  let best = deck[0]!;
-  let bestDist = Math.abs(value - best);
-  for (const c of deck.slice(1)) {
-    const d = Math.abs(value - c);
-    if (d < bestDist || (d === bestDist && c > best)) {
-      best = c;
-      bestDist = d;
-    }
-  }
-  return best;
 }

@@ -15,8 +15,14 @@ describe("decks", () => {
     expect(isValidCard(4, "sp")).toBe(false);
   });
 
-  it("validates membership for kind=duration", () => {
+  it("accepts any finite non-negative number for kind=duration", () => {
     expect(isValidCard(8, "duration")).toBe(true);
-    expect(isValidCard(3, "duration")).toBe(false);
+    expect(isValidCard(3, "duration")).toBe(true);
+    expect(isValidCard(0, "duration")).toBe(true);
+    expect(isValidCard(0.5, "duration")).toBe(true);
+    expect(isValidCard(-1, "duration")).toBe(false);
+    expect(isValidCard(1000, "duration")).toBe(false);
+    expect(isValidCard(Number.NaN, "duration")).toBe(false);
+    expect(isValidCard(Number.POSITIVE_INFINITY, "duration")).toBe(false);
   });
 });

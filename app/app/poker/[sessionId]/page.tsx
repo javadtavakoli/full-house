@@ -4,6 +4,7 @@ import { getServerUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { sessions, sessionMembers, users } from "@/lib/db/schema";
 import { getRoomSnapshot, joinSession } from "@/lib/poker/service";
+import { env } from "@/lib/env";
 import { RoomClient } from "./room.client";
 import { VoterPicker, type Candidate } from "@/components/poker/voter-picker";
 
@@ -32,6 +33,7 @@ export default async function RoomPage({
       <RoomClient
         initialSnapshot={JSON.parse(JSON.stringify(snap))}
         currentUserId={user.id}
+        youtrackBaseUrl={env.YT_BASE_URL}
       />
     );
   }

@@ -8,5 +8,7 @@ export function deckFor(kind: EstimateKind): readonly number[] {
 }
 
 export function isValidCard(value: number, kind: EstimateKind): boolean {
-  return deckFor(kind).includes(value as never);
+  if (kind === "sp") return deckFor(kind).includes(value as never);
+  // duration: free-form hours, 0 to 999, finite
+  return Number.isFinite(value) && value >= 0 && value <= 999;
 }

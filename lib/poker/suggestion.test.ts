@@ -23,17 +23,13 @@ describe("suggestDuration", () => {
   it("returns null for empty votes", () => {
     expect(suggestDuration([])).toBeNull();
   });
-  it("snaps average to nearest deck card", () => {
-    // avg = (4+8)/2 = 6 → deck cards 4, 8 — round up on tie → 8
-    expect(suggestDuration([4, 8])).toBe(8);
-    // avg = (4+4+8)/3 = 5.33 → distance to 4 is 1.33, to 8 is 2.67 → 4
-    expect(suggestDuration([4, 4, 8])).toBe(4);
+  it("rounds average to nearest 0.5", () => {
+    expect(suggestDuration([4, 8])).toBe(6);
+    expect(suggestDuration([4, 4, 8])).toBeCloseTo(5.5); // (4+4+8)/3 = 5.333 → 5.5
+    expect(suggestDuration([1, 2, 3])).toBe(2); // (1+2+3)/3 = 2
+    expect(suggestDuration([1.5, 2.5])).toBe(2);
   });
-  it("single vote = that value if it's a deck card", () => {
+  it("single vote returns that value", () => {
     expect(suggestDuration([8])).toBe(8);
-  });
-  it("rounds up on a tie distance", () => {
-    // avg = 3 → distance to 2 is 1, to 4 is 1 → tie → 4
-    expect(suggestDuration([2, 4])).toBe(4);
   });
 });

@@ -59,6 +59,17 @@ describe("syncIssue", () => {
     const comment = captured.find((c) => c.url.startsWith("comment"));
     expect(JSON.stringify(comment?.body)).toContain("Story Points: 5");
     expect(JSON.stringify(comment?.body)).toContain("Duration: 12h total");
+
+    // Duration field is written as a Period payload ({ minutes: N }), not a bare number.
+    // total = 8 + 2 + 2 = 12h → 720 minutes.
+    const fieldBodies = captured
+      .filter((c) => c.url.startsWith("field"))
+      .map((c) => c.body as { customFields: Array<{ name: string; value: unknown }> });
+    const durationBody = fieldBodies.find((b) =>
+      b.customFields?.some((f) => f.name === "Estimation"),
+    );
+    expect(durationBody).toBeDefined();
+    expect(durationBody!.customFields[0]!.value).toEqual({ minutes: 720 });
   });
 
   it("skips field writes when sp/all-duration are skipped, still posts comment", async () => {

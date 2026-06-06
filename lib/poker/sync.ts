@@ -58,7 +58,7 @@ export async function syncIssue(issueId: string, token: string): Promise<SyncRes
   if (anyNonSkipped && durationField) {
     const total = phases.reduce((s, p) => s + (p.final ?? 0), 0);
     try {
-      await updateIssueField(token, issue.issueKey, durationField, total);
+      await updateIssueField(token, issue.issueKey, durationField, total, { asPeriodMinutes: true });
       await logYoutrackPost({
         issueId,
         kind: "duration_field",

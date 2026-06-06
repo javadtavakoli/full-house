@@ -1,15 +1,31 @@
 import Link from "next/link";
+import { ExternalLink } from "lucide-react";
 
-export function IssueCard({ keyId, summary, description }: { keyId: string; summary: string; description: string | null }) {
-  const href = `${process.env.NEXT_PUBLIC_YT_BASE_URL ?? ""}/issue/${keyId}`;
+export function IssueCard({
+  youtrackBaseUrl, keyId, summary, description,
+}: {
+  youtrackBaseUrl: string;
+  keyId: string;
+  summary: string;
+  description: string | null;
+}) {
+  const href = `${youtrackBaseUrl.replace(/\/$/, "")}/issue/${keyId}`;
   return (
-    <div className="text-center">
+    <div className="text-center flex flex-col gap-3">
       <div className="text-xs uppercase tracking-wide text-muted-foreground">Current Issue</div>
-      <h2 className="text-2xl font-semibold mt-1">
-        <Link href={href} target="_blank" className="hover:underline">{keyId}</Link>
-        <span className="mx-2 text-muted-foreground">—</span>{summary}
+      <h2 className="text-2xl font-semibold flex items-center justify-center gap-2 flex-wrap">
+        <Link href={href} target="_blank" rel="noopener noreferrer" className="hover:underline inline-flex items-center gap-1">
+          {keyId}
+          <ExternalLink className="h-4 w-4" aria-hidden="true" />
+        </Link>
+        <span className="text-muted-foreground">—</span>
+        <span>{summary}</span>
       </h2>
-      {description && <p className="text-sm text-muted-foreground mt-2 max-w-prose mx-auto">{description}</p>}
+      {description ? (
+        <p className="text-sm text-foreground whitespace-pre-wrap max-w-2xl mx-auto text-left">{description}</p>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">No description in YouTrack.</p>
+      )}
     </div>
   );
 }

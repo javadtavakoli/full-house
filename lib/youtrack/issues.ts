@@ -43,7 +43,12 @@ export async function updateIssueField(
   issueKey: string,
   fieldName: string,
   value: number | string | null,
+  options?: { asPeriodMinutes?: boolean },
 ): Promise<void> {
   const yt = youtrackApi(token);
-  await yt.setCustomFields(issueKey, [{ name: fieldName, value }]);
+  const payload =
+    options?.asPeriodMinutes && typeof value === "number"
+      ? { minutes: Math.round(value * 60) }
+      : value;
+  await yt.setCustomFields(issueKey, [{ name: fieldName, value: payload }]);
 }

@@ -11,7 +11,8 @@ import { ModeratorControls } from "@/components/poker/moderator-controls";
 import { IssueCard } from "@/components/poker/issue-card";
 import { RoundBadge } from "@/components/poker/round-badge";
 import { PhaseStepper } from "@/components/poker/phase-stepper";
-import { SP_DECK, DURATION_DECK } from "@/lib/poker/decks";
+import { DurationInput } from "@/components/poker/duration-input";
+import { SP_DECK } from "@/lib/poker/decks";
 import { suggestSp, suggestDuration } from "@/lib/poker/suggestion";
 import { phaseOfStatus } from "@/lib/poker/state-machine";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,13 @@ type Snapshot = {
   } | null;
 };
 
-export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot: Snapshot; currentUserId: string }) {
+export function RoomClient({
+  initialSnapshot, currentUserId, youtrackBaseUrl,
+}: {
+  initialSnapshot: Snapshot;
+  currentUserId: string;
+  youtrackBaseUrl: string;
+}) {
   const router = useRouter();
   const [snap, setSnap] = useState<Snapshot>(initialSnapshot);
   const [myCard, setMyCard] = useState<number | null>(null);
@@ -45,7 +52,6 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
   const active = snap.activeIssue;
   const status = active?.issue.status ?? "pending";
   const { kind, phase } = phaseOfStatus(status as never);
-  const deck = kind === "duration" ? DURATION_DECK : SP_DECK;
   const unit = kind === "duration" ? "h" : "";
 
   const refresh = useCallback(async () => {
@@ -171,7 +177,12 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
       {active && (
         <>
           <PhaseStepper status={status} />
-          <IssueCard keyId={active.issue.issueKey} summary={active.issue.summary} description={active.issue.description} />
+          <IssueCard
+            youtrackBaseUrl={youtrackBaseUrl}
+            keyId={active.issue.issueKey}
+            summary={active.issue.summary}
+            description={active.issue.description}
+          />
           <div className="flex items-center justify-center gap-2">
             <RoundBadge round={active.currentEstimate.round} />
           </div>
@@ -179,8 +190,19 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
 
           {!active.isRevealed && (
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground text-center mb-2">Your card{phase ? ` — ${phase}` : ""}</p>
-              <CardDeck deck={deck} selected={myCard} onPick={vote} disabled={false} />
+              {kind === "sp" ? (
+                <>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground text-center mb-2">Your card</p>
+                  <CardDeck deck={SP_DECK} selected={myCard} onPick={vote} disabled={false} />
+                </>
+              ) : (
+                <DurationInput
+                  value={myCard}
+                  onSubmit={vote}
+                  disabled={false}
+                  phaseLabel={phase ?? ""}
+                />
+              )}
             </div>
           )}
 
@@ -191,6 +213,7 @@ export function RoomClient({ initialSnapshot, currentUserId }: { initialSnapshot
           {isModerator && (
             <ModeratorControls
               status={status}
+              kind={kind}
               suggestion={suggestion}
               onReveal={reveal}
               onSubmit={submit}
