@@ -21,9 +21,21 @@ export async function createSession(opts: {
   const cfg = youtrackConfig();
   const yt = youtrackApi(opts.token);
 
-  const raw = (await yt.request("GET", `/agiles/${opts.boardId}/sprints/${opts.sprintId}`, {
-    query: { fields: SPRINT_ISSUES_FIELDS },
-  })) as { issues?: RawIssue[] };
+  const [raw, rawUsers] = await Promise.all([
+    yt.request("GET", `/agiles/${opts.boardId}/sprints/${opts.sprintId}`, {
+      query: { fields: SPRINT_ISSUES_FIELDS },
+    }) as Promise<{ issues?: RawIssue[] }>,
+    yt.request("GET", "/users", {
+      query: { fields: "id,login,name,fullName" },
+    }) as Promise<Array<{ id: string; login: string; name: string; fullName: string }>>,
+  ]);
+
+  const candidates = (rawUsers ?? []).map((u) => ({
+    youtrackId: u.id,
+    login: u.login,
+    name: u.name,
+    fullName: u.fullName,
+  }));
 
   const rawIssues = raw.issues ?? [];
   const conventions = discoverConventions(rawIssues, {
@@ -52,6 +64,7 @@ export async function createSession(opts: {
         spField: conventions.spField ?? null,
         durationField: conventions.durationField ?? null,
         doneStateNames: conventions.doneStateNames.length > 0 ? conventions.doneStateNames : null,
+        candidates,
       })
       .returning();
     if (!session) throw new Error("session insert failed");

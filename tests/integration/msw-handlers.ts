@@ -1,6 +1,12 @@
 import { http, HttpResponse } from "msw";
 
 export const handlers = [
+  http.get("https://example.youtrack.cloud/api/users", () =>
+    HttpResponse.json([
+      { id: "u1", login: "alice", name: "Alice", fullName: "Alice Smith" },
+      { id: "u2", login: "bob", name: "Bob", fullName: "Bob Jones" },
+    ]),
+  ),
   http.get("https://example.youtrack.cloud/api/agiles/B1/sprints/S47", () =>
     HttpResponse.json({
       issues: [

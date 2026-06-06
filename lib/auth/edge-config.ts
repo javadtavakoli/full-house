@@ -40,6 +40,29 @@ export const authConfig = {
         }
       },
     }),
+    Credentials({
+      id: "voter",
+      name: "Voter",
+      credentials: {
+        sessionId: { type: "text" },
+        youtrackId: { type: "text" },
+      },
+      async authorize(creds) {
+        const sessionId =
+          typeof creds?.sessionId === "string" ? creds.sessionId : "";
+        const youtrackId =
+          typeof creds?.youtrackId === "string" ? creds.youtrackId : "";
+        if (!sessionId || !youtrackId) return null;
+        // Don't touch DB here (edge-config must stay DB-free for middleware).
+        // The signIn callback (Node runtime) does the real validation.
+        return {
+          id: youtrackId,
+          name: null,
+          email: null,
+          image: null,
+        } as { id: string; name: string | null; email: string | null; image: string | null };
+      },
+    }),
   ],
   pages: { signIn: "/login" },
   callbacks: {

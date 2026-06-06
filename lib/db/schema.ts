@@ -37,6 +37,7 @@ export const sessions = pgTable("sessions", {
   spField: text("sp_field"),
   durationField: text("duration_field"),
   doneStateNames: text("done_state_names").array(),
+  candidates: jsonb("candidates"), // Array<{ youtrackId, login, name, fullName }> or null
   teamId: uuid("team_id"), // v3 placeholder
 });
 

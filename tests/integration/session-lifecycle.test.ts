@@ -62,6 +62,11 @@ describe("session lifecycle", () => {
     // The msw default sprint contains only Open-state issues, so doneStateNames discovery
     // returns nothing and we land on the env fallback (vitest-setup sets "Done,Won't fix").
     expect(row!.doneStateNames).toEqual(["Done", "Won't fix"]);
+    // Candidates fetched from /users are persisted as JSONB.
+    expect(row!.candidates).toEqual([
+      { youtrackId: "u1", login: "alice", name: "Alice", fullName: "Alice Smith" },
+      { youtrackId: "u2", login: "bob", name: "Bob", fullName: "Bob Jones" },
+    ]);
   });
 
   it("filters out issues whose state is in the discovered done set", async () => {

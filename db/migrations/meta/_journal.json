@@ -22,6 +22,13 @@
       "when": 1780698212735,
       "tag": "0002_discover_conventions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780738007993,
+      "tag": "0003_session_candidates",
+      "breakpoints": true
     }
   ]
 }
