@@ -49,11 +49,25 @@ describe("listSprintIssues", () => {
 });
 
 describe("updateIssueField", () => {
-  it("posts a customFields payload", async () => {
+  it("posts a customFields payload with $type for simple fields", async () => {
     await updateIssueField("token", "FH-1242", "Story Points", 5);
     expect(captured[0]?.method).toBe("POST");
     expect(captured[0]?.body).toEqual({
-      customFields: [{ name: "Story Points", value: 5 }],
+      customFields: [{ name: "Story Points", $type: "SimpleIssueCustomField", value: 5 }],
+    });
+  });
+
+  it("posts a Period payload with $type for duration fields", async () => {
+    await updateIssueField("token", "FH-1242", "Estimation", 1.5, { asPeriodMinutes: true });
+    expect(captured[0]?.method).toBe("POST");
+    expect(captured[0]?.body).toEqual({
+      customFields: [
+        {
+          name: "Estimation",
+          $type: "PeriodIssueCustomField",
+          value: { minutes: 90, $type: "PeriodValue" },
+        },
+      ],
     });
   });
 });

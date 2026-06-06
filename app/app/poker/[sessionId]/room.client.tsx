@@ -12,6 +12,7 @@ import { IssueCard } from "@/components/poker/issue-card";
 import { RoundBadge } from "@/components/poker/round-badge";
 import { PhaseStepper } from "@/components/poker/phase-stepper";
 import { DurationInput } from "@/components/poker/duration-input";
+import { SendToYoutrackDialog } from "@/components/poker/send-to-youtrack-dialog";
 import { SP_DECK } from "@/lib/poker/decks";
 import { suggestSp, suggestDuration } from "@/lib/poker/suggestion";
 import { phaseOfStatus } from "@/lib/poker/state-machine";
@@ -41,6 +42,7 @@ export function RoomClient({
   const [myCard, setMyCard] = useState<number | null>(null);
   const [abstained, setAbstained] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [sendDialogIssue, setSendDialogIssue] = useState<{ id: string; key: string } | null>(null);
 
   usePresencePing(initialSnapshot.session.id);
 
@@ -132,18 +134,6 @@ export function RoomClient({
     const r = await fetch(`/api/sessions/${snap.session.id}`, { method: "DELETE" });
     if (!r.ok) toast.error(await r.text());
   }
-  async function retrySync(issueId: string) {
-    const r = await fetch(`/api/sessions/${snap.session.id}/sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issueId }),
-    });
-    if (!r.ok) { toast.error(await r.text()); return; }
-    const result = await r.json();
-    const failures = Object.entries(result).filter(([, v]) => !(v as { ok: boolean }).ok).map(([k]) => k);
-    if (failures.length === 0) { toast.success("Sync succeeded"); refresh(); }
-    else toast.error(`Sync still failing: ${failures.join(", ")}`);
-  }
 
   const pending = snap.issues.filter((i) => i.status === "pending");
 
@@ -193,8 +183,18 @@ export function RoomClient({
               {completed.map((i) => (
                 <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2 text-sm">
                   <span className="opacity-70">{i.issueKey} — {i.summary} {i.status === "skipped" && <em className="text-xs text-muted-foreground">(skipped)</em>}</span>
-                  {i.syncStatus === "failed" && (
-                    <Button size="sm" variant="outline" onClick={() => retrySync(i.id)}>Retry sync</Button>
+                  {isModerator && i.syncStatus === null && (
+                    <Button size="sm" onClick={() => setSendDialogIssue({ id: i.id, key: i.issueKey })}>
+                      Send to YouTrack
+                    </Button>
+                  )}
+                  {isModerator && i.syncStatus === "failed" && (
+                    <Button size="sm" variant="outline" onClick={() => setSendDialogIssue({ id: i.id, key: i.issueKey })}>
+                      Retry sync
+                    </Button>
+                  )}
+                  {i.syncStatus === "ok" && (
+                    <span className="text-xs text-emerald-700">Synced</span>
                   )}
                 </li>
               ))}
@@ -267,6 +267,17 @@ export function RoomClient({
             />
           )}
         </>
+      )}
+
+      {sendDialogIssue && (
+        <SendToYoutrackDialog
+          open={!!sendDialogIssue}
+          onOpenChange={(v) => { if (!v) setSendDialogIssue(null); }}
+          sessionId={snap.session.id}
+          issueId={sendDialogIssue.id}
+          issueKey={sendDialogIssue.key}
+          onDone={() => { void refresh(); }}
+        />
       )}
     </div>
   );

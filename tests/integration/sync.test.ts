@@ -69,7 +69,10 @@ describe("syncIssue", () => {
       b.customFields?.some((f) => f.name === "Estimation"),
     );
     expect(durationBody).toBeDefined();
-    expect(durationBody!.customFields[0]!.value).toEqual({ minutes: 720 });
+    expect(durationBody!.customFields[0]!.value).toEqual({ minutes: 720, $type: "PeriodValue" });
+    expect((durationBody!.customFields[0] as { $type?: string }).$type).toBe(
+      "PeriodIssueCustomField",
+    );
   });
 
   it("skips field writes when sp/all-duration are skipped, still posts comment", async () => {

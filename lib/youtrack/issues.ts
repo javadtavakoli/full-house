@@ -46,9 +46,17 @@ export async function updateIssueField(
   options?: { asPeriodMinutes?: boolean },
 ): Promise<void> {
   const yt = youtrackApi(token);
-  const payload =
-    options?.asPeriodMinutes && typeof value === "number"
-      ? { minutes: Math.round(value * 60) }
-      : value;
-  await yt.setCustomFields(issueKey, [{ name: fieldName, value: payload }]);
+  // YouTrack REST requires each customFields entry to include a `$type` discriminator
+  // matching the projectCustomField type (and a `$type` on the value for period fields).
+  // Without it, the API silently rejects the write with a 400 like "$type is required".
+  if (options?.asPeriodMinutes && typeof value === "number") {
+    const payload = { minutes: Math.round(value * 60), $type: "PeriodValue" };
+    await yt.setCustomFields(issueKey, [
+      { name: fieldName, $type: "PeriodIssueCustomField", value: payload },
+    ]);
+  } else {
+    await yt.setCustomFields(issueKey, [
+      { name: fieldName, $type: "SimpleIssueCustomField", value },
+    ]);
+  }
 }

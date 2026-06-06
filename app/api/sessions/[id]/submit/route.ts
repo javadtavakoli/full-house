@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getServerUser, getYoutrackAccessToken } from "@/lib/auth/session";
+import { getServerUser } from "@/lib/auth/session";
 import { submitFinal } from "@/lib/poker/service";
-import { syncIssue } from "@/lib/poker/sync";
 import { broadcastFinalSubmitted, broadcastPhaseChanged } from "@/lib/pusher/server";
 
 const Body = z.object({ issueId: z.string().uuid(), finalValue: z.number() });
@@ -16,11 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const next = await submitFinal(id, parsed.data.issueId, user.id, parsed.data.finalValue);
   await broadcastFinalSubmitted(id, parsed.data.issueId, parsed.data.finalValue);
   await broadcastPhaseChanged(id, parsed.data.issueId, next.status, next.round);
-  if (next.status === "completed") {
-    const token = await getYoutrackAccessToken(user.id);
-    if (token) {
-      syncIssue(parsed.data.issueId, token).catch((e) => console.error("sync after completion failed", e));
-    }
-  }
+  // Completion no longer auto-syncs to YouTrack — moderator must explicitly
+  // open the "Send to YouTrack" dialog to confirm SP and duration values.
   return NextResponse.json({ status: next.status });
 }

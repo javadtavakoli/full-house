@@ -22,7 +22,7 @@ export function RevealPanel({
       <div className="flex gap-3 justify-center flex-wrap">
         {groups.map(([value, names]) => (
           <div key={value} className="flex flex-col items-center gap-1">
-            <div className="w-14 h-20 rounded-md border-2 border-emerald-500 bg-emerald-50 flex items-center justify-center font-semibold text-lg">
+            <div className="w-14 h-20 rounded-md border-2 border-emerald-500 bg-emerald-50 text-emerald-900 flex items-center justify-center font-semibold text-lg">
               {value}{unit}
             </div>
             <span className="text-xs text-muted-foreground">{names.join(", ")}</span>

@@ -13,7 +13,7 @@ export function CardDeck({
           onClick={() => onPick(v)}
           className={cn(
             "w-14 h-20 rounded-md border text-lg font-semibold flex items-center justify-center",
-            selected === v ? "border-2 border-emerald-500 bg-emerald-50" : "border-muted hover:border-foreground",
+            selected === v ? "border-2 border-emerald-500 bg-emerald-50 text-emerald-900" : "border-muted hover:border-foreground",
             disabled && "opacity-50 cursor-not-allowed",
           )}
         >
