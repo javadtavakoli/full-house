@@ -33,7 +33,7 @@ export default async function RoomPage({
       <RoomClient
         initialSnapshot={JSON.parse(JSON.stringify(snap))}
         currentUserId={user.id}
-        youtrackBaseUrl={env.YT_BASE_URL}
+        youtrackBaseUrl={session.workspaceBaseUrl || env.YT_BASE_URL}
         userDefaultMode={(user.defaultPokerMode as "simple" | "advanced" | null) ?? "advanced"}
         userDefaultWithEstimation={user.defaultWithEstimation ?? true}
       />

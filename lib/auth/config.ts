@@ -66,8 +66,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (account?.provider !== "credentials") return false;
       const raw = (credentials as { token?: unknown } | undefined)?.token;
+      const rawWorkspaceUrl = (credentials as { workspaceUrl?: unknown } | undefined)?.workspaceUrl;
       const token = typeof raw === "string" ? raw.trim() : "";
       if (!token) return false;
+      // Workspace URL is now per-user. Fall back to env for clients that
+      // haven't been updated to send the field (legacy / e2e).
+      const workspaceUrlInput =
+        typeof rawWorkspaceUrl === "string" && rawWorkspaceUrl.trim() !== ""
+          ? rawWorkspaceUrl.trim()
+          : env.YT_BASE_URL;
+      const cleanWorkspaceUrl = workspaceUrlInput.replace(/\/$/, "");
       const youtrackId = String((user as { id?: string }).id ?? "");
       if (!youtrackId) return false;
 
@@ -96,10 +104,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           refreshToken: null,
           expiresAt: farFuture,
           scope: "PAT",
+          workspaceBaseUrl: cleanWorkspaceUrl,
         })
         .onConflictDoUpdate({
           target: [oauthAccounts.userId, oauthAccounts.provider],
-          set: { accessToken: encryptedToken, expiresAt: farFuture, scope: "PAT" },
+          set: {
+            accessToken: encryptedToken,
+            expiresAt: farFuture,
+            scope: "PAT",
+            workspaceBaseUrl: cleanWorkspaceUrl,
+          },
         });
       return true;
     },

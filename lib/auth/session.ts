@@ -13,14 +13,18 @@ export async function getServerUser() {
   return user ?? null;
 }
 
-export async function getYoutrackAccessToken(userId: string): Promise<string | null> {
+export async function getYoutrackAccessToken(
+  userId: string,
+): Promise<{ token: string; baseUrl: string } | null> {
   const [acct] = await db
     .select()
     .from(oauthAccounts)
     .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "youtrack")))
     .limit(1);
   if (!acct) return null;
-  return decrypt(acct.accessToken, env.YT_TOKEN_ENC_KEY);
+  const token = decrypt(acct.accessToken, env.YT_TOKEN_ENC_KEY);
+  const baseUrl = acct.workspaceBaseUrl ?? env.YT_BASE_URL;
+  return { token, baseUrl };
 }
 
 export async function requireServerUser() {

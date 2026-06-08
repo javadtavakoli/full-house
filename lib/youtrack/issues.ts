@@ -21,8 +21,9 @@ export async function listSprintIssues(
   boardId: string,
   sprintId: string,
   opts: { excludeStates: string[] },
+  baseUrl?: string,
 ): Promise<YtIssue[]> {
-  const yt = youtrackApi(token);
+  const yt = youtrackApi(token, baseUrl);
   const data = (await yt.request("GET", `/agiles/${boardId}/sprints/${sprintId}`, {
     query: { fields: "issues(id,idReadable,summary,description,customFields(name,value(name)))" },
   })) as { issues?: RawIssue[] };
@@ -43,9 +44,9 @@ export async function updateIssueField(
   issueKey: string,
   fieldName: string,
   value: number | string | null,
-  options?: { asPeriodMinutes?: boolean },
+  options?: { asPeriodMinutes?: boolean; baseUrl?: string },
 ): Promise<void> {
-  const yt = youtrackApi(token);
+  const yt = youtrackApi(token, options?.baseUrl);
   // YouTrack REST requires each customFields entry to include a `$type` discriminator
   // matching the projectCustomField type (and a `$type` on the value for period fields).
   // Without it, the API silently rejects the write with a 400 like "$type is required".

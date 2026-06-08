@@ -165,6 +165,9 @@ export function RoomClient({
   async function revote() { if (active) await post("/revote", { issueId: active.issue.id }); }
   async function skipPhase() { if (active) await post("/skip-phase", { issueId: active.issue.id }); }
   async function skipIssue() { if (active) await post("/skip-issue", { issueId: active.issue.id }); }
+  async function restoreIssue(issueId: string) {
+    await post("/restore-issue", { issueId });
+  }
 
   // gotoPhase is callable for either the active issue (from ModeratorControls)
   // or a completed issue (from the per-row select). Accept the issueId explicitly
@@ -280,6 +283,17 @@ export function RoomClient({
                       <span className="text-xs text-amber-700">failed</span>
                     ) : (
                       <span className="text-xs text-muted-foreground">completed</span>
+                    )}
+                    {/* Moderator can restore a skipped issue back to pending */}
+                    {isModerator && i.status === "skipped" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs"
+                        onClick={() => restoreIssue(i.id)}
+                      >
+                        Restore
+                      </Button>
                     )}
                     {/* Moderator can re-open a completed issue at any phase */}
                     {isModerator && i.status === "completed" && (

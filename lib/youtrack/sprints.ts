@@ -8,8 +8,8 @@ export type YtSprint = {
   finish: number;
 };
 
-export async function listSprints(token: string, boardId: string): Promise<YtSprint[]> {
-  const yt = youtrackApi(token);
+export async function listSprints(token: string, boardId: string, baseUrl?: string): Promise<YtSprint[]> {
+  const yt = youtrackApi(token, baseUrl);
   const data = await yt.request("GET", `/agiles/${boardId}/sprints`, {
     query: { fields: "id,name,archived,start,finish" },
   });

@@ -5,6 +5,7 @@ import { conventionsForSession, gatherSummary, logYoutrackPost } from "./service
 import { formatSummaryComment } from "./comment-formatter";
 import { updateIssueField } from "@/lib/youtrack/issues";
 import { postIssueComment } from "@/lib/youtrack/comments";
+import { env } from "@/lib/env";
 
 export type SyncResult = {
   spField: { ok: boolean; error?: string };
@@ -37,6 +38,9 @@ export async function syncIssue(
   const [session] = await db.select().from(sessions).where(eq(sessions.id, issue.sessionId)).limit(1);
   if (!session) throw new Error("session not found");
   const { spField, durationField } = conventionsForSession(session);
+  // Per-session workspace URL — falls back to env for legacy rows that were
+  // created before this column existed (default is the empty string).
+  const baseUrl = session.workspaceBaseUrl || env.YT_BASE_URL;
   const summary = await gatherSummary(issueId);
 
   const result: SyncResult = {
@@ -63,7 +67,7 @@ export async function syncIssue(
   // SP field — write only if we have a final and a known field
   if (spFinal !== null && spField) {
     try {
-      await updateIssueField(token, issue.issueKey, spField, spFinal);
+      await updateIssueField(token, issue.issueKey, spField, spFinal, { baseUrl });
       await logYoutrackPost({
         issueId,
         kind: "sp_field",
@@ -90,6 +94,7 @@ export async function syncIssue(
     try {
       await updateIssueField(token, issue.issueKey, durationField, durationFinal, {
         asPeriodMinutes: true,
+        baseUrl,
       });
       await logYoutrackPost({
         issueId,
@@ -138,7 +143,7 @@ export async function syncIssue(
   }
 
   try {
-    const res = await postIssueComment(token, issue.issueKey, text);
+    const res = await postIssueComment(token, issue.issueKey, text, baseUrl);
     await logYoutrackPost({
       issueId,
       kind: "comment",

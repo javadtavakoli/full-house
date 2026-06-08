@@ -43,6 +43,13 @@
       "when": 1780945875888,
       "tag": "0005_poker_modes_and_direct_entry",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780949363800,
+      "tag": "0006_workspace_base_url",
+      "breakpoints": true
     }
   ]
 }

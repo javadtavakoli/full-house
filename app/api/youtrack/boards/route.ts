@@ -5,8 +5,8 @@ import { listBoards } from "@/lib/youtrack/boards";
 export async function GET() {
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  const token = await getYoutrackAccessToken(user.id);
-  if (!token) return NextResponse.json({ error: "no token" }, { status: 401 });
-  const boards = await listBoards(token);
+  const ytAuth = await getYoutrackAccessToken(user.id);
+  if (!ytAuth) return NextResponse.json({ error: "no token" }, { status: 401 });
+  const boards = await listBoards(ytAuth.token, ytAuth.baseUrl);
   return NextResponse.json({ boards });
 }

@@ -12,15 +12,15 @@ const Body = z.object({
 export async function POST(req: Request) {
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  const token = await getYoutrackAccessToken(user.id);
-  if (!token) return NextResponse.json({ error: "no token" }, { status: 401 });
+  const ytAuth = await getYoutrackAccessToken(user.id);
+  if (!ytAuth) return NextResponse.json({ error: "no token" }, { status: 401 });
 
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const session = await createSession({
     creatorUserId: user.id,
-    token,
+    token: ytAuth.token,
     boardId: parsed.data.boardId,
     sprintId: parsed.data.sprintId,
     sprintName: parsed.data.sprintName,

@@ -1,6 +1,6 @@
 import { eq, and, desc, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { sessions, sessionMembers, issues, users, estimates, votes, youtrackPosts } from "@/lib/db/schema";
+import { sessions, sessionMembers, issues, users, estimates, votes, youtrackPosts, oauthAccounts } from "@/lib/db/schema";
 import { youtrackApi } from "@/lib/youtrack/api";
 import { youtrackConfig } from "@/lib/youtrack/config";
 import { discoverConventions, type RawIssue } from "@/lib/youtrack/discover";
@@ -33,7 +33,23 @@ export async function createSession(opts: {
   sprintName: string;
 }) {
   const cfg = youtrackConfig();
-  const yt = youtrackApi(opts.token);
+  // Each user is bound to their own YouTrack workspace via oauth_accounts.
+  // Read the moderator's per-account baseUrl (or env fallback) so all
+  // YouTrack calls AND the session row carry the moderator's tenant.
+  // Read it directly here rather than via lib/auth/session, which pulls in
+  // next-auth and breaks vitest's ESM loader.
+  const [creatorAcct] = await db
+    .select({ workspaceBaseUrl: oauthAccounts.workspaceBaseUrl })
+    .from(oauthAccounts)
+    .where(
+      and(
+        eq(oauthAccounts.userId, opts.creatorUserId),
+        eq(oauthAccounts.provider, "youtrack"),
+      ),
+    )
+    .limit(1);
+  const sessionBaseUrl = creatorAcct?.workspaceBaseUrl ?? cfg.baseUrl;
+  const yt = youtrackApi(opts.token, sessionBaseUrl);
 
   const [raw, rawUsers] = await Promise.all([
     yt.request("GET", `/agiles/${opts.boardId}/sprints/${opts.sprintId}`, {
@@ -79,6 +95,7 @@ export async function createSession(opts: {
         durationField: conventions.durationField ?? null,
         doneStateNames: conventions.doneStateNames.length > 0 ? conventions.doneStateNames : null,
         candidates,
+        workspaceBaseUrl: sessionBaseUrl,
       })
       .returning();
     if (!session) throw new Error("session insert failed");
@@ -481,6 +498,22 @@ export async function skipIssue(sessionId: string, issueId: string, moderatorUse
     const next = reduceIssue(issueStateFrom(issue, 1), { type: "skipIssue" });
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     return next;
+  });
+}
+
+/**
+ * Un-skip an issue: skipped → pending. Lets the moderator re-queue an issue
+ * they skipped earlier so they can pick it again. Refuses anything that isn't
+ * currently `skipped`.
+ */
+export async function restoreIssue(sessionId: string, issueId: string, moderatorUserId: string) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
+    if (issue.status !== "skipped") throw new Error(`issue is ${issue.status}, not skipped`);
+    await tx.update(issues).set({ status: "pending" }).where(eq(issues.id, issueId));
+    return { status: "pending" as const, round: 1 };
   });
 }
 

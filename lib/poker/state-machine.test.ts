@@ -77,6 +77,33 @@ describe("state machine", () => {
     expect(s.status).toBe("skipped");
   });
 
+  describe("restore", () => {
+    it("restoring a skipped issue returns it to pending", () => {
+      const s = reduceIssue({ status: "skipped", round: 2, ...A }, { type: "restore" });
+      expect(s.status).toBe("pending");
+    });
+
+    it("restoring from any other state throws", () => {
+      const states: IssueState["status"][] = [
+        "pending",
+        "sp_voting",
+        "sp_revealed",
+        "dur_impl_voting",
+        "dur_impl_revealed",
+        "dur_review_voting",
+        "dur_review_revealed",
+        "dur_test_voting",
+        "dur_test_revealed",
+        "completed",
+      ];
+      for (const status of states) {
+        expect(() =>
+          reduceIssue({ status, round: 1, ...A }, { type: "restore" }),
+        ).toThrow();
+      }
+    });
+  });
+
   it("invalid transitions throw", () => {
     expect(() => reduceIssue({ status: "pending", round: 1, ...A }, { type: "reveal" })).toThrow();
     expect(() => reduceIssue({ status: "sp_voting", round: 1, ...A }, { type: "submit" })).toThrow();

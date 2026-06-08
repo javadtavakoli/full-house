@@ -9,13 +9,19 @@ export const authConfig = {
     Credentials({
       name: "YouTrack",
       credentials: {
+        workspaceUrl: { label: "Workspace URL", type: "text" },
         token: { label: "Personal access token", type: "password" },
       },
       async authorize(creds) {
         const token = typeof creds?.token === "string" ? creds.token.trim() : "";
-        if (!token) return null;
-        const baseUrl = (process.env.YT_BASE_URL ?? "").replace(/\/$/, "");
-        if (!baseUrl) return null;
+        // Each user supplies their own workspace URL; fall back to the env
+        // default only if the form didn't (legacy flows / e2e).
+        const rawWorkspaceUrl =
+          typeof creds?.workspaceUrl === "string"
+            ? creds.workspaceUrl.trim()
+            : (process.env.YT_BASE_URL ?? "");
+        if (!token || !rawWorkspaceUrl) return null;
+        const baseUrl = rawWorkspaceUrl.replace(/\/$/, "");
         try {
           const yt = createApi({ baseUrl, token });
           const me = await yt.me();

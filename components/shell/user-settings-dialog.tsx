@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import Link from "next/link";
 
 export function UserSettingsDialog({
   open,
@@ -100,6 +101,16 @@ export function UserSettingsDialog({
               onCheckedChange={setWithEstimation}
               disabled={!loaded}
             />
+          </div>
+          <div className="border-t pt-3 text-sm">
+            <Link
+              href="/security"
+              className="text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Security &amp; privacy →
+            </Link>
           </div>
         </div>
         <DialogFooter>

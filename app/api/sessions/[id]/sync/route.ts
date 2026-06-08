@@ -14,8 +14,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   await params;
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  const token = await getYoutrackAccessToken(user.id);
-  if (!token) return NextResponse.json({ error: "no token" }, { status: 401 });
+  const ytAuth = await getYoutrackAccessToken(user.id);
+  if (!ytAuth) return NextResponse.json({ error: "no token" }, { status: 401 });
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
@@ -25,6 +25,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (parsed.data.spOverride !== undefined) overrides.spOverride = parsed.data.spOverride;
   if (parsed.data.durationOverride !== undefined) overrides.durationOverride = parsed.data.durationOverride;
 
-  const result = await syncIssue(parsed.data.issueId, token, overrides);
+  // syncIssue reads the session row's workspace_base_url internally — we only
+  // need to pass the token; the base URL is derived from session state.
+  const result = await syncIssue(parsed.data.issueId, ytAuth.token, overrides);
   return NextResponse.json(result);
 }

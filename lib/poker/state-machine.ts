@@ -27,6 +27,7 @@ export type Action =
   | { type: "revote" }
   | { type: "skipPhase" }
   | { type: "skipIssue" }
+  | { type: "restore" }
   | { type: "gotoPhase"; target: "sp" | "impl" | "review" | "test" };
 
 const REVEAL_OF: Partial<Record<IssueStatus, IssueStatus>> = {
@@ -100,6 +101,9 @@ export function reduceIssue(state: IssueState, action: Action): IssueState {
     case "skipIssue":
       if (state.status === "completed") throw new Error("cannot skip a completed issue");
       return { ...state, status: "skipped", round: state.round };
+    case "restore":
+      if (state.status !== "skipped") throw new Error(`cannot restore from ${state.status}`);
+      return { ...state, status: "pending" };
     case "gotoPhase": {
       // Allowed from any state except `pending` (no active issue) and `skipped`.
       if (state.status === "pending" || state.status === "skipped") {

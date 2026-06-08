@@ -1,10 +1,10 @@
 import { createApi } from "trackpilot";
 import { youtrackConfig } from "./config";
 
-export function youtrackApi(token: string) {
+export function youtrackApi(token: string, baseUrl?: string) {
   const cfg = youtrackConfig();
   return createApi({
-    baseUrl: cfg.baseUrl.replace(/\/$/, ""),
+    baseUrl: (baseUrl ?? cfg.baseUrl).replace(/\/$/, ""),
     token,
   });
 }

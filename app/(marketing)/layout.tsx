@@ -47,6 +47,9 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
             <Link href="/ylate" className="hover:text-foreground">
               Ylate
             </Link>
+            <Link href="/security" className="hover:text-foreground">
+              Security
+            </Link>
           </nav>
         </div>
       </footer>

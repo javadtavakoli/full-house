@@ -23,6 +23,9 @@ export const oauthAccounts = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     scope: text("scope").notNull(),
     teamId: uuid("team_id"), // v3 placeholder, nullable
+    // The YouTrack workspace this PAT is for. Null on legacy rows — those
+    // fall back to env.YT_BASE_URL at read time.
+    workspaceBaseUrl: text("workspace_base_url"),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.provider] }),
@@ -43,6 +46,11 @@ export const sessions = pgTable("sessions", {
   doneStateNames: text("done_state_names").array(),
   candidates: jsonb("candidates"), // Array<{ youtrackId, login, name, fullName }> or null
   teamId: uuid("team_id"), // v3 placeholder
+  // The YouTrack workspace this session was created against. Filled at create
+  // time from the moderator's oauth_accounts.workspaceBaseUrl (or env fallback).
+  // Default empty string keeps the column NOT NULL friendly for legacy rows
+  // backfilled by the migration — in practice it's never read empty.
+  workspaceBaseUrl: text("workspace_base_url").notNull().default(""),
 });
 
 export const sessionMembers = pgTable(

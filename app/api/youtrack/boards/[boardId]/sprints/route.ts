@@ -6,9 +6,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ boardId
   const { boardId } = await params;
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  const token = await getYoutrackAccessToken(user.id);
-  if (!token) return NextResponse.json({ error: "no token" }, { status: 401 });
-  const sprints = await listSprints(token, boardId);
+  const ytAuth = await getYoutrackAccessToken(user.id);
+  if (!ytAuth) return NextResponse.json({ error: "no token" }, { status: 401 });
+  const sprints = await listSprints(ytAuth.token, boardId, ytAuth.baseUrl);
   const defaultSprint = pickDefaultSprint(sprints, Date.now());
   return NextResponse.json({ sprints, defaultSprintId: defaultSprint?.id ?? null });
 }
