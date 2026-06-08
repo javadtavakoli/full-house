@@ -75,6 +75,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         typeof rawWorkspaceUrl === "string" && rawWorkspaceUrl.trim() !== ""
           ? rawWorkspaceUrl.trim()
           : env.YT_BASE_URL;
+      if (!workspaceUrlInput) return false;
       const cleanWorkspaceUrl = workspaceUrlInput.replace(/\/$/, "");
       const youtrackId = String((user as { id?: string }).id ?? "");
       if (!youtrackId) return false;

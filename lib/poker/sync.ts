@@ -41,6 +41,7 @@ export async function syncIssue(
   // Per-session workspace URL — falls back to env for legacy rows that were
   // created before this column existed (default is the empty string).
   const baseUrl = session.workspaceBaseUrl || env.YT_BASE_URL;
+  if (!baseUrl) throw new Error("session has no workspace URL");
   const summary = await gatherSummary(issueId);
 
   const result: SyncResult = {

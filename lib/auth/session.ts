@@ -26,8 +26,9 @@ export async function getYoutrackAccessToken(
   // opaque ciphertext that this server key can't unwrap; callers MUST use
   // getYoutrackContext (which reads the x-youtrack-token header) instead.
   if (acct.encryptionMode === "client") return null;
-  const token = decrypt(acct.accessToken, env.YT_TOKEN_ENC_KEY);
   const baseUrl = acct.workspaceBaseUrl ?? env.YT_BASE_URL;
+  if (!baseUrl) return null;
+  const token = decrypt(acct.accessToken, env.YT_TOKEN_ENC_KEY);
   return { token, baseUrl };
 }
 
@@ -57,6 +58,7 @@ export async function getYoutrackContext(
     .limit(1);
   if (!acct) return { error: "no account", status: 401 };
   const baseUrl = acct.workspaceBaseUrl ?? env.YT_BASE_URL;
+  if (!baseUrl) return { error: "workspace url missing — please sign in again with your YouTrack workspace URL", status: 401 };
 
   if (acct.encryptionMode === "client") {
     const token = req.headers.get("x-youtrack-token");

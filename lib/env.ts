@@ -3,7 +3,10 @@ import { z } from "zod";
 const schema = z.object({
   DATABASE_URL: z.string().url(),
   AUTH_SECRET: z.string().min(32),
-  YT_BASE_URL: z.string().url(),
+  // Optional — historically used as the single deployment-wide workspace.
+  // The app is now workspace-agnostic: each user supplies their workspace URL at signup.
+  // This stays only as a fallback for legacy oauth_accounts rows where workspace_base_url is null.
+  YT_BASE_URL: z.string().url().optional(),
   YT_TOKEN_ENC_KEY: z.string().refine(
     (v) => Buffer.from(v, "base64").length === 32,
     "must be a base64-encoded 32-byte key",

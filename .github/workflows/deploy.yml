@@ -12,7 +12,7 @@ name: Deploy
 #
 # REQUIRED VERCEL PROJECT ENV VARS (Vercel dashboard → Project → Settings → Environment Variables,
 # applied to both "Production" and "Preview"):
-#   DATABASE_URL, AUTH_SECRET, YT_BASE_URL, YT_TOKEN_ENC_KEY,
+#   DATABASE_URL, AUTH_SECRET, YT_TOKEN_ENC_KEY,
 #   PUSHER_APP_ID, PUSHER_KEY, PUSHER_SECRET, PUSHER_CLUSTER,
 #   NEXT_PUBLIC_PUSHER_KEY, NEXT_PUBLIC_PUSHER_CLUSTER, NEXT_PUBLIC_SITE_URL
 # Optional (leave blank to auto-discover; only set to override discovery):

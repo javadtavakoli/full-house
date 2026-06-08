@@ -203,7 +203,7 @@ export function LoginForm({
             type="url"
             inputMode="url"
             autoComplete="url"
-            placeholder="https://acme.youtrack.cloud"
+            placeholder="https://your-workspace.youtrack.cloud"
             value={workspaceUrl}
             onChange={(e) => setWorkspaceUrl(e.target.value)}
             required
@@ -269,14 +269,14 @@ export function LoginForm({
           type="url"
           inputMode="url"
           autoComplete="url"
-          placeholder="https://acme.youtrack.cloud"
+          placeholder="https://your-workspace.youtrack.cloud"
           value={workspaceUrl}
           onChange={(e) => setWorkspaceUrl(e.target.value)}
           required
           disabled={loading}
         />
         <p className="text-xs text-muted-foreground mt-1">
-          Your YouTrack Cloud URL, e.g. <code>https://acme.youtrack.cloud</code>.
+          The URL of your YouTrack Cloud workspace — open YouTrack in a browser and copy the address.
         </p>
       </div>
       <div>
