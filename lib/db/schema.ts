@@ -11,6 +11,11 @@ export const users = pgTable("users", {
   defaultPokerMode: text("default_poker_mode"), // 'simple' | 'advanced'
   // Moderator's preferred default for whether duration estimation runs. Null → fall back to true.
   defaultWithEstimation: boolean("default_with_estimation"),
+  // The YouTrack login (username) — populated during signup from /users/me.
+  // Used by /api/auth/lookup-encrypted to resolve a login to the encrypted-PAT
+  // blob during a password-mode sign-in. Nullable on legacy rows that signed in
+  // before this column existed; those users continue to use PAT mode.
+  youtrackLogin: text("youtrack_login"),
 });
 
 export const oauthAccounts = pgTable(
@@ -26,6 +31,16 @@ export const oauthAccounts = pgTable(
     // The YouTrack workspace this PAT is for. Null on legacy rows — those
     // fall back to env.YT_BASE_URL at read time.
     workspaceBaseUrl: text("workspace_base_url"),
+    // How accessToken is encrypted:
+    //   'server' (default) — encrypted with env.YT_TOKEN_ENC_KEY; server can decrypt.
+    //   'client' — encrypted in the browser with a key derived from the user's
+    //     password (PBKDF2-SHA256 + AES-256-GCM); server stores ciphertext only.
+    encryptionMode: text("encryption_mode").notNull().default("server"),
+    // Base64-encoded 16 bytes. Required when encryptionMode='client'; null when 'server'.
+    passwordSalt: text("password_salt"),
+    // Iteration count for the PBKDF2 key derivation. Stored so we can bump the
+    // default in the future without breaking decryption of older blobs.
+    pbkdf2Iterations: integer("pbkdf2_iterations").notNull().default(600000),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.provider] }),

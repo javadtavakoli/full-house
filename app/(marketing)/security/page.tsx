@@ -39,6 +39,32 @@ export default function SecurityPage() {
         </ul>
       </section>
 
+      <section className="flex flex-col gap-3 border-l-4 border-emerald-500/40 pl-4">
+        <h2 className="text-2xl font-semibold">Password protection (optional)</h2>
+        <p>
+          You can opt in to encrypting your token with a password we never see. When enabled,
+          your token is encrypted in your browser with a key derived from your password
+          (PBKDF2-SHA256, 600,000 iterations, AES-256-GCM). We store only the ciphertext and a
+          random salt. Without your password, even an attacker with full database + server-secret
+          access cannot decrypt your token.
+        </p>
+        <p className="text-sm font-medium">The trade-offs:</p>
+        <ul className="list-disc pl-6 space-y-1 text-sm">
+          <li>You must enter your password to sign in each time.</li>
+          <li>
+            If you forget your password, you must revoke your PAT in YouTrack and sign up again —
+            there is no recovery.
+          </li>
+          <li>
+            Real-time sessions you already have open keep working until you close the tab; the
+            decrypted token lives only in browser <code>sessionStorage</code>.
+          </li>
+        </ul>
+        <p className="text-sm text-muted-foreground">
+          Toggle this from Settings → Token encryption after signing in.
+        </p>
+      </section>
+
       <section className="flex flex-col gap-3">
         <h2 className="text-2xl font-semibold">What we store about you</h2>
         <ul className="list-disc pl-6 space-y-1 text-sm">
@@ -82,7 +108,10 @@ export default function SecurityPage() {
             Delete your account from settings — removes your token row and all rooms you created.
             Sessions you joined as a voter stay anonymized.
           </li>
-          <li>Browser-side encryption with your own password — coming soon as an opt-in.</li>
+          <li>
+            Enable password protection from Settings to make your token un-decryptable without
+            your password (details above).
+          </li>
         </ul>
       </section>
 

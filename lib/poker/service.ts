@@ -28,27 +28,41 @@ const SPRINT_ISSUES_FIELDS =
 export async function createSession(opts: {
   creatorUserId: string;
   token: string;
+  /**
+   * Optional. When the calling route already resolved the moderator's
+   * workspace URL (e.g. via getYoutrackContext) it passes it through here so
+   * we don't re-query oauth_accounts. Falls back to the DB-stored value, then
+   * to the env default. Tests omit it and rely on the fallback path.
+   */
+  workspaceBaseUrl?: string;
   boardId: string;
   sprintId: string;
   sprintName: string;
 }) {
   const cfg = youtrackConfig();
-  // Each user is bound to their own YouTrack workspace via oauth_accounts.
-  // Read the moderator's per-account baseUrl (or env fallback) so all
-  // YouTrack calls AND the session row carry the moderator's tenant.
-  // Read it directly here rather than via lib/auth/session, which pulls in
-  // next-auth and breaks vitest's ESM loader.
-  const [creatorAcct] = await db
-    .select({ workspaceBaseUrl: oauthAccounts.workspaceBaseUrl })
-    .from(oauthAccounts)
-    .where(
-      and(
-        eq(oauthAccounts.userId, opts.creatorUserId),
-        eq(oauthAccounts.provider, "youtrack"),
-      ),
-    )
-    .limit(1);
-  const sessionBaseUrl = creatorAcct?.workspaceBaseUrl ?? cfg.baseUrl;
+  // Resolve the workspace URL once. Order:
+  //   1. caller-provided opts.workspaceBaseUrl
+  //   2. oauth_accounts.workspaceBaseUrl for the moderator
+  //   3. env.YT_BASE_URL (cfg.baseUrl)
+  // Each user is bound to their own YouTrack workspace via oauth_accounts, so
+  // all YouTrack calls AND the session row carry the moderator's tenant.
+  // The DB lookup is kept as a fallback for callers (notably tests) that
+  // don't thread the URL through. Read it directly here rather than via
+  // lib/auth/session, which pulls in next-auth and breaks vitest's ESM loader.
+  let sessionBaseUrl = opts.workspaceBaseUrl;
+  if (!sessionBaseUrl) {
+    const [creatorAcct] = await db
+      .select({ workspaceBaseUrl: oauthAccounts.workspaceBaseUrl })
+      .from(oauthAccounts)
+      .where(
+        and(
+          eq(oauthAccounts.userId, opts.creatorUserId),
+          eq(oauthAccounts.provider, "youtrack"),
+        ),
+      )
+      .limit(1);
+    sessionBaseUrl = creatorAcct?.workspaceBaseUrl ?? cfg.baseUrl;
+  }
   const yt = youtrackApi(opts.token, sessionBaseUrl);
 
   const [raw, rawUsers] = await Promise.all([
@@ -512,6 +526,11 @@ export async function restoreIssue(sessionId: string, issueId: string, moderator
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
     if (issue.status !== "skipped") throw new Error(`issue is ${issue.status}, not skipped`);
+    // Wipe every estimate row tied to this issue (and its votes, via the
+    // estimateId ON DELETE CASCADE on `votes`). If we leave them in place, a
+    // subsequent `pick → vote round 1` collides with the pre-skip round-1 row
+    // and `gatherSummary` (strict-greater on round) may read the stale row.
+    await tx.delete(estimates).where(eq(estimates.issueId, issueId));
     await tx.update(issues).set({ status: "pending" }).where(eq(issues.id, issueId));
     return { status: "pending" as const, round: 1 };
   });

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ytFetch } from "@/lib/youtrack/client-fetch";
 
 type PerPhase = { impl: number | null; review: number | null; test: number | null };
 type Summary = { sp: number | null; durationTotal: number | null; perPhase: PerPhase | null };
@@ -130,7 +131,9 @@ export function SendAllToYoutrackDialog({
     }
     updateRow(issueId, { status: "sending", error: undefined });
     try {
-      const r = await fetch(`/api/sessions/${sessionId}/sync`, {
+      // sync hits YouTrack on the server side — pass the token header for
+      // client-mode users via ytFetch.
+      const r = await ytFetch(`/api/sessions/${sessionId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId, spOverride: spNum, durationOverride: durNum }),

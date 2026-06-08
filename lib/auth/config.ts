@@ -79,6 +79,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const youtrackId = String((user as { id?: string }).id ?? "");
       if (!youtrackId) return false;
 
+      // YouTrack login smuggled through from authorize() — used for
+      // password-mode login lookups (resolves login → encrypted blob).
+      const login = (user as { login?: unknown }).login;
+      const youtrackLogin = typeof login === "string" && login.trim() !== "" ? login.trim() : null;
+
       const [existing] = await db.select().from(users).where(eq(users.youtrackId, youtrackId)).limit(1);
       const userRow =
         existing ??
@@ -89,30 +94,62 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             email: user.email ?? "",
             displayName: user.name ?? user.email ?? "Unknown",
             avatarUrl: user.image ?? null,
+            youtrackLogin,
           })
           .returning())[0]!;
+      // Backfill login on returning users that signed up before this column existed.
+      if (existing && !existing.youtrackLogin && youtrackLogin) {
+        await db
+          .update(users)
+          .set({ youtrackLogin })
+          .where(eq(users.id, existing.id));
+      }
+
+      // Decide what ciphertext + mode to store.
+      //   client mode (encryptedToken+passwordSalt provided): store the blob
+      //     verbatim — the server can no longer decrypt it. Login still
+      //     succeeded because we just validated the plaintext token above.
+      //   server mode (default): encrypt with the master key as before.
+      const rawEncryptedToken = (credentials as { encryptedToken?: unknown })?.encryptedToken;
+      const rawPasswordSalt = (credentials as { passwordSalt?: unknown })?.passwordSalt;
+      const rawEncryptionMode = (credentials as { encryptionMode?: unknown })?.encryptionMode;
+      const isClientMode =
+        rawEncryptionMode === "client" &&
+        typeof rawEncryptedToken === "string" &&
+        rawEncryptedToken.length > 0 &&
+        typeof rawPasswordSalt === "string" &&
+        rawPasswordSalt.length > 0;
+
+      const storedToken = isClientMode
+        ? (rawEncryptedToken as string)
+        : encrypt(token, env.YT_TOKEN_ENC_KEY);
+      const storedMode: "server" | "client" = isClientMode ? "client" : "server";
+      const storedSalt: string | null = isClientMode ? (rawPasswordSalt as string) : null;
 
       // PATs don't expire — store a far-future sentinel.
       const farFuture = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-      const encryptedToken = encrypt(token, env.YT_TOKEN_ENC_KEY);
       await db
         .insert(oauthAccounts)
         .values({
           userId: userRow.id,
           provider: "youtrack",
-          accessToken: encryptedToken,
+          accessToken: storedToken,
           refreshToken: null,
           expiresAt: farFuture,
           scope: "PAT",
           workspaceBaseUrl: cleanWorkspaceUrl,
+          encryptionMode: storedMode,
+          passwordSalt: storedSalt,
         })
         .onConflictDoUpdate({
           target: [oauthAccounts.userId, oauthAccounts.provider],
           set: {
-            accessToken: encryptedToken,
+            accessToken: storedToken,
             expiresAt: farFuture,
             scope: "PAT",
             workspaceBaseUrl: cleanWorkspaceUrl,
+            encryptionMode: storedMode,
+            passwordSalt: storedSalt,
           },
         });
       return true;

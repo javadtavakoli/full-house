@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { ytFetch } from "@/lib/youtrack/client-fetch";
 
 type Board = { id: string; name: string };
 type Sprint = { id: string; name: string };
@@ -18,13 +19,15 @@ export function SessionCreateForm() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/youtrack/boards").then((r) => r.json()).then((d) => setBoards(d.boards ?? []));
+    // ytFetch — these hit YouTrack on the server, so they need the token
+    // header for client-mode users.
+    ytFetch("/api/youtrack/boards").then((r) => r.json()).then((d) => setBoards(d.boards ?? []));
   }, []);
 
   useEffect(() => {
     if (!boardId) return;
     setSprints([]); setSprintId("");
-    fetch(`/api/youtrack/boards/${boardId}/sprints`).then((r) => r.json()).then((d) => {
+    ytFetch(`/api/youtrack/boards/${boardId}/sprints`).then((r) => r.json()).then((d) => {
       setSprints(d.sprints ?? []);
       if (d.defaultSprintId) setSprintId(d.defaultSprintId);
     });
@@ -35,7 +38,7 @@ export function SessionCreateForm() {
   async function start() {
     setLoading(true);
     try {
-      const res = await fetch("/api/sessions", {
+      const res = await ytFetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ boardId, sprintId, sprintName }),

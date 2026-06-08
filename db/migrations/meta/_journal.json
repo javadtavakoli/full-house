@@ -50,6 +50,13 @@
       "when": 1780949363800,
       "tag": "0006_workspace_base_url",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780951458362,
+      "tag": "0007_encryption_mode",
+      "breakpoints": true
     }
   ]
 }

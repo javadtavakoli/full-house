@@ -11,6 +11,13 @@ export const authConfig = {
       credentials: {
         workspaceUrl: { label: "Workspace URL", type: "text" },
         token: { label: "Personal access token", type: "password" },
+        // Optional client-encryption fields. When the form posts these the
+        // server stores `encryptedToken` instead of encrypting `token` itself.
+        // The plaintext `token` is still required so we can validate against
+        // YouTrack at signup time.
+        encryptedToken: { type: "text" },
+        passwordSalt: { type: "text" },
+        encryptionMode: { type: "text" },
       },
       async authorize(creds) {
         const token = typeof creds?.token === "string" ? creds.token.trim() : "";
@@ -35,12 +42,17 @@ export const authConfig = {
             email: string;
             avatarUrl: string | null;
           };
+          // Smuggle the YouTrack `login` through to the signIn callback as a
+          // non-standard field on the returned User. We persist it onto
+          // users.youtrack_login so the password-mode sign-in can look up the
+          // user's encrypted blob by (workspace, login).
           return {
             id: profile.id,
             name: profile.name ?? me.name,
             email: profile.email,
             image: profile.avatarUrl,
-          };
+            login: profile.login,
+          } as unknown as { id: string; name: string | null; email: string | null; image: string | null };
         } catch {
           return null;
         }

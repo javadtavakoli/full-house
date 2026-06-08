@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { UserSettingsDialog } from "./user-settings-dialog";
+import { setStoredToken } from "@/hooks/use-youtrack-token";
 
 export function UserMenu({ name, email, image }: { name: string; email: string; image: string | null }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -27,7 +28,16 @@ export function UserMenu({ name, email, image }: { name: string; email: string; 
             </div>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>Settings</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/" })}>Sign out</DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              // Clear the cached plaintext token so a same-tab re-login can't
+              // accidentally inherit a stale token from sessionStorage.
+              setStoredToken(null);
+              signOut({ callbackUrl: "/" });
+            }}
+          >
+            Sign out
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <UserSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
