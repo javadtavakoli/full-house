@@ -168,6 +168,16 @@ export function RoomClient({
   async function restoreIssue(issueId: string) {
     await post("/restore-issue", { issueId });
   }
+  // Primary "Estimate" path — picks the issue immediately using the moderator's
+  // saved defaults. The chevron button next to it opens the override dialog
+  // for cases where they want a different mode, no estimation, or to enter directly.
+  async function pickWithDefaults(issueId: string) {
+    await post("/pick-issue", {
+      issueId,
+      mode: userDefaultMode,
+      withEstimation: userDefaultWithEstimation,
+    });
+  }
 
   // gotoPhase is callable for either the active issue (from ModeratorControls)
   // or a completed issue (from the per-row select). Accept the issueId explicitly
@@ -242,15 +252,29 @@ export function RoomClient({
           )}
           <ul className="flex flex-col gap-1">
             {pending.map((i) => (
-              <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2">
-                <span>{i.issueKey} — {i.summary}</span>
+              <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2 gap-2">
+                <span className="min-w-0 truncate">{i.issueKey} — {i.summary}</span>
                 {isModerator && (
-                  <Button
-                    size="sm"
-                    onClick={() => setPickDialogIssue({ id: i.id, key: i.issueKey })}
-                  >
-                    Estimate
-                  </Button>
+                  <div className="flex items-stretch shrink-0">
+                    <Button
+                      size="sm"
+                      onClick={() => pickWithDefaults(i.id)}
+                      className="rounded-r-none"
+                      title={`Start estimation (${userDefaultMode}${userDefaultWithEstimation ? "" : ", no estimation"})`}
+                    >
+                      Estimate
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setPickDialogIssue({ id: i.id, key: i.issueKey })}
+                      className="rounded-l-none border-l border-l-background/20 px-2"
+                      title="Override mode or enter values directly"
+                      aria-label="Estimate options"
+                    >
+                      ▾
+                    </Button>
+                  </div>
                 )}
               </li>
             ))}
