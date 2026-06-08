@@ -135,10 +135,6 @@ export function RoomClient({
     return r.ok;
   }
 
-  // Legacy single-button pick — kept for callers that still want to use moderator defaults
-  // without showing the dialog. The dialog (PickIssueDialog) calls /pick-issue directly.
-  async function pick(issueId: string) { await post("/pick-issue", { issueId }); }
-  void pick;
   async function vote(v: number) {
     if (!active) return;
     setMyCard(v);
@@ -295,7 +291,16 @@ export function RoomClient({
                           <SelectValue placeholder="Back to…" />
                         </SelectTrigger>
                         <SelectContent>
-                          {BACK_TO_OPTIONS.map((t) => (
+                          {BACK_TO_OPTIONS.filter((t) => {
+                            // Simple-mode and SP-only issues should not expose
+                            // review/test as jump targets — those phases have no
+                            // meaning outside advanced + withEstimation.
+                            const mode = i.pokerMode ?? "advanced";
+                            const we = i.withEstimation ?? true;
+                            if (!we) return t.value === "sp";
+                            if (mode === "simple") return t.value === "sp" || t.value === "impl";
+                            return true;
+                          }).map((t) => (
                             <SelectItem key={t.value} value={t.value}>
                               {t.label}
                             </SelectItem>
@@ -370,6 +375,8 @@ export function RoomClient({
               kind={kind}
               suggestion={suggestion}
               submitting={submitting}
+              mode={active.issue.pokerMode ?? "advanced"}
+              withEstimation={active.issue.withEstimation ?? true}
               onReveal={reveal}
               onSubmit={submit}
               onRevote={revote}

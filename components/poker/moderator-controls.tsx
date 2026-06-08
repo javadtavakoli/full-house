@@ -36,6 +36,8 @@ export function ModeratorControls({
   kind,
   suggestion,
   submitting = false,
+  mode = "advanced",
+  withEstimation = true,
   onReveal,
   onSubmit,
   onRevote,
@@ -48,6 +50,8 @@ export function ModeratorControls({
   kind: "sp" | "duration" | null;
   suggestion: number | null;
   submitting?: boolean;
+  mode?: "simple" | "advanced";
+  withEstimation?: boolean;
   onReveal: () => void;
   onSubmit: (v: number) => void;
   onRevote: () => void;
@@ -66,9 +70,14 @@ export function ModeratorControls({
 
   const current = activeTarget(status);
   // Hide the current phase from the dropdown — that's what Revote is for.
-  // `skipped` issues never render these controls; `completed` issues aren't active
-  // either (no controls visible), so the dropdown always has at least three options here.
-  const available = ALL_TARGETS.filter((t) => t.value !== current);
+  // Also hide targets the issue's mode/withEstimation doesn't reach: SP-only
+  // issues only allow "sp"; simple-mode issues only allow "sp" and "impl".
+  const available = ALL_TARGETS.filter((t) => {
+    if (t.value === current) return false;
+    if (!withEstimation) return t.value === "sp";
+    if (mode === "simple") return t.value === "sp" || t.value === "impl";
+    return true;
+  });
 
   function submitDraft() {
     const n = Number(draft);
