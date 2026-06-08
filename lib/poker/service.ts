@@ -4,9 +4,23 @@ import { sessions, sessionMembers, issues, users, estimates, votes, youtrackPost
 import { youtrackApi } from "@/lib/youtrack/api";
 import { youtrackConfig } from "@/lib/youtrack/config";
 import { discoverConventions, type RawIssue } from "@/lib/youtrack/discover";
-import { reduceIssue, phaseOfStatus, type IssueStatus } from "./state-machine";
+import { reduceIssue, phaseOfStatus, type IssueState, type IssueStatus, type PokerMode } from "./state-machine";
 import { isValidCard } from "./decks";
 import type { SummaryInput } from "./comment-formatter";
+
+/**
+ * Build the state machine input from a stored issue row. Null mode/withEstimation
+ * come from legacy rows (pre-modes) and fall back to advanced + true so the
+ * existing flow is preserved.
+ */
+function issueStateFrom(issue: typeof issues.$inferSelect, round: number): IssueState {
+  return {
+    status: issue.status as IssueStatus,
+    round,
+    mode: ((issue.pokerMode as PokerMode | null) ?? "advanced"),
+    withEstimation: issue.withEstimation ?? true,
+  };
+}
 
 const SPRINT_ISSUES_FIELDS =
   "issues(id,idReadable,summary,description,customFields(name,projectCustomField(field(fieldType(id))),value(name,isResolved)))";
@@ -140,7 +154,12 @@ export async function getSessionView(sessionId: string) {
   return { session, members, issues: issuesList };
 }
 
-export async function pickIssue(sessionId: string, issueId: string, moderatorUserId: string) {
+export async function pickIssue(
+  sessionId: string,
+  issueId: string,
+  moderatorUserId: string,
+  opts?: { mode?: PokerMode; withEstimation?: boolean },
+) {
   return db.transaction(async (tx) => {
     await assertModerator(tx, sessionId, moderatorUserId);
     // ensure no other issue is currently in-flight (not pending / completed / skipped)
@@ -154,10 +173,120 @@ export async function pickIssue(sessionId: string, issueId: string, moderatorUse
     if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
     if (issue.status !== "pending") throw new Error(`issue is ${issue.status}`);
 
-    const next = reduceIssue({ status: issue.status as IssueStatus, round: 1 }, { type: "pick" });
+    // Resolve mode/withEstimation: opts > moderator's stored defaults > built-in fallback
+    const [mod] = await tx.select().from(users).where(eq(users.id, moderatorUserId)).limit(1);
+    const mode: PokerMode = opts?.mode ?? (mod?.defaultPokerMode as PokerMode | null) ?? "advanced";
+    const withEstimation: boolean =
+      opts?.withEstimation ?? mod?.defaultWithEstimation ?? true;
+
+    await tx
+      .update(issues)
+      .set({ pokerMode: mode, withEstimation })
+      .where(eq(issues.id, issueId));
+
+    const next = reduceIssue(
+      { status: issue.status as IssueStatus, round: 1, mode, withEstimation },
+      { type: "pick" },
+    );
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     await tx.insert(estimates).values({ issueId, kind: "sp", phase: null, round: 1 });
     return next;
+  });
+}
+
+/**
+ * Moderator types SP and/or total duration directly without holding a vote.
+ * Only valid on pending issues. Both values are nullable — null means "skip that field".
+ * The issue jumps straight to `completed` with `directEntry=true`.
+ */
+export async function enterDirectly(
+  sessionId: string,
+  issueId: string,
+  moderatorUserId: string,
+  values: { sp: number | null; durationTotal: number | null },
+) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
+    if (issue.status !== "pending") {
+      throw new Error(`issue is ${issue.status} — direct entry only allowed on pending issues`);
+    }
+
+    await tx
+      .update(issues)
+      .set({ status: "completed", directEntry: true })
+      .where(eq(issues.id, issueId));
+
+    if (values.sp !== null) {
+      await tx.insert(estimates).values({
+        issueId,
+        kind: "sp",
+        phase: null,
+        round: 1,
+        finalValue: String(values.sp),
+        decidedBy: moderatorUserId,
+        decidedAt: new Date(),
+      });
+    }
+    if (values.durationTotal !== null) {
+      // Store as the impl-phase row so the sync/total math reads it from the same
+      // place it reads simple-mode totals.
+      await tx.insert(estimates).values({
+        issueId,
+        kind: "duration",
+        phase: "impl",
+        round: 1,
+        finalValue: String(values.durationTotal),
+        decidedBy: moderatorUserId,
+        decidedAt: new Date(),
+      });
+    }
+
+    return { status: "completed" as const };
+  });
+}
+
+/**
+ * Update the moderator's preferred defaults. Both fields are nullable; passing
+ * undefined leaves them untouched, null resets to "no preference".
+ */
+export async function setUserDefaults(
+  userId: string,
+  opts: { defaultPokerMode?: PokerMode | null; defaultWithEstimation?: boolean | null },
+) {
+  const set: Record<string, unknown> = {};
+  if (opts.defaultPokerMode !== undefined) set.defaultPokerMode = opts.defaultPokerMode;
+  if (opts.defaultWithEstimation !== undefined)
+    set.defaultWithEstimation = opts.defaultWithEstimation;
+  if (Object.keys(set).length === 0) return;
+  await db.update(users).set(set).where(eq(users.id, userId));
+}
+
+/**
+ * Change an active issue's mode (e.g., the moderator picks "advanced" then
+ * decides to switch to "simple" mid-flow). Refuses when the issue is already
+ * finished. Useful when the moderator skipped the pick-dialog and wants to
+ * adjust without restarting the issue.
+ */
+export async function setIssueMode(
+  sessionId: string,
+  issueId: string,
+  moderatorUserId: string,
+  mode: PokerMode,
+  withEstimation: boolean,
+) {
+  return db.transaction(async (tx) => {
+    await assertModerator(tx, sessionId, moderatorUserId);
+    const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
+    if (issue.status === "completed" || issue.status === "skipped") {
+      throw new Error("cannot change mode of a finished issue");
+    }
+    await tx
+      .update(issues)
+      .set({ pokerMode: mode, withEstimation })
+      .where(eq(issues.id, issueId));
   });
 }
 
@@ -195,7 +324,7 @@ export async function reveal(sessionId: string, issueId: string, moderatorUserId
     await assertModerator(tx, sessionId, moderatorUserId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue) throw new Error("issue not found");
-    const next = reduceIssue({ status: issue.status as IssueStatus, round: 1 }, { type: "reveal" });
+    const next = reduceIssue(issueStateFrom(issue, 1), { type: "reveal" });
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     return next;
   });
@@ -306,7 +435,7 @@ export async function submitFinal(sessionId: string, issueId: string, moderatorU
       .set({ finalValue: String(finalValue), decidedBy: moderatorUserId, decidedAt: new Date() })
       .where(eq(estimates.id, current.id));
 
-    const next = reduceIssue({ status: issue.status as IssueStatus, round: current.round }, { type: "submit" });
+    const next = reduceIssue(issueStateFrom(issue, current.round), { type: "submit" });
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
 
     // Open the next estimate row if we advanced into a voting state.
@@ -333,7 +462,7 @@ export async function skipPhase(sessionId: string, issueId: string, moderatorUse
         .set({ finalValue: null, decidedBy: moderatorUserId, decidedAt: new Date() })
         .where(eq(estimates.id, current.id));
     }
-    const next = reduceIssue({ status: issue.status as IssueStatus, round: current?.round ?? 1 }, { type: "skipPhase" });
+    const next = reduceIssue(issueStateFrom(issue, current?.round ?? 1), { type: "skipPhase" });
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     const phase = phaseOfStatus(next.status);
     if (phase.kind && next.status.endsWith("_voting")) {
@@ -349,7 +478,7 @@ export async function skipIssue(sessionId: string, issueId: string, moderatorUse
     await assertModerator(tx, sessionId, moderatorUserId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue) throw new Error("issue not found");
-    const next = reduceIssue({ status: issue.status as IssueStatus, round: 1 }, { type: "skipIssue" });
+    const next = reduceIssue(issueStateFrom(issue, 1), { type: "skipIssue" });
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     return next;
   });
@@ -362,7 +491,7 @@ export async function startRevote(sessionId: string, issueId: string, moderatorU
     if (!issue) throw new Error("issue not found");
     const current = await currentEstimate(tx, issueId);
     if (!current) throw new Error("no current estimate");
-    const next = reduceIssue({ status: issue.status as IssueStatus, round: current.round }, { type: "revote" });
+    const next = reduceIssue(issueStateFrom(issue, current.round), { type: "revote" });
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     // open a new estimate row at round+1
     await tx.insert(estimates).values({
@@ -393,7 +522,7 @@ export async function gotoPhase(
     }
 
     const next = reduceIssue(
-      { status: issue.status as IssueStatus, round: 1 },
+      issueStateFrom(issue, 1),
       { type: "gotoPhase", target },
     );
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
@@ -556,6 +685,9 @@ export async function gatherSummary(issueId: string): Promise<SummaryInput> {
   return {
     date: new Date(),
     members: memberNames,
+    mode: ((issue.pokerMode as PokerMode | null) ?? "advanced"),
+    withEstimation: issue.withEstimation ?? true,
+    directEntry: !!issue.directEntry,
     sp: await summaryFor("sp:"),
     duration: {
       impl: await summaryFor("duration:impl"),

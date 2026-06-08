@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /* Tailwind v4 reads colors from @theme — not from tailwind.config.ts.
    Map the shadcn HSL variables to v4's --color-* tokens so utilities

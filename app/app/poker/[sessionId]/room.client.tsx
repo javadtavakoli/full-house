@@ -12,6 +12,7 @@ import { IssueCard } from "@/components/poker/issue-card";
 import { RoundBadge } from "@/components/poker/round-badge";
 import { PhaseStepper } from "@/components/poker/phase-stepper";
 import { DurationInput } from "@/components/poker/duration-input";
+import { PickIssueDialog } from "@/components/poker/pick-issue-dialog";
 import {
   SendAllToYoutrackDialog,
   type ReviewIssue,
@@ -28,12 +29,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+type SnapshotIssue = {
+  id: string;
+  issueKey: string;
+  summary: string;
+  description: string | null;
+  status: string;
+  position: number;
+  syncStatus: "ok" | "failed" | null;
+  pokerMode: "simple" | "advanced" | null;
+  withEstimation: boolean | null;
+  directEntry: boolean;
+};
+
 type Snapshot = {
   session: { id: string; sprintName: string; createdBy: string; status: string };
   members: Array<{ userId: string; role: string; displayName: string; avatarUrl: string | null; lastSeenAt: string }>;
-  issues: Array<{ id: string; issueKey: string; summary: string; description: string | null; status: string; position: number; syncStatus: "ok" | "failed" | null }>;
+  issues: Array<SnapshotIssue>;
   activeIssue: {
-    issue: { id: string; issueKey: string; summary: string; description: string | null; status: string };
+    issue: SnapshotIssue;
     currentEstimate: { id: string; round: number; kind: "sp" | "duration"; phase: string | null };
     votes: Array<{ userId: string; value?: number | null }>;
     isRevealed: boolean;
@@ -50,10 +64,13 @@ const BACK_TO_OPTIONS: Array<{ value: GotoTarget; label: string }> = [
 
 export function RoomClient({
   initialSnapshot, currentUserId, youtrackBaseUrl,
+  userDefaultMode = "advanced", userDefaultWithEstimation = true,
 }: {
   initialSnapshot: Snapshot;
   currentUserId: string;
   youtrackBaseUrl: string;
+  userDefaultMode?: "simple" | "advanced";
+  userDefaultWithEstimation?: boolean;
 }) {
   const router = useRouter();
   const [snap, setSnap] = useState<Snapshot>(initialSnapshot);
@@ -61,6 +78,7 @@ export function RoomClient({
   const [abstained, setAbstained] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [pickDialogIssue, setPickDialogIssue] = useState<{ id: string; key: string } | null>(null);
 
   usePresencePing(initialSnapshot.session.id);
 
@@ -117,7 +135,10 @@ export function RoomClient({
     return r.ok;
   }
 
+  // Legacy single-button pick — kept for callers that still want to use moderator defaults
+  // without showing the dialog. The dialog (PickIssueDialog) calls /pick-issue directly.
   async function pick(issueId: string) { await post("/pick-issue", { issueId }); }
+  void pick;
   async function vote(v: number) {
     if (!active) return;
     setMyCard(v);
@@ -224,7 +245,14 @@ export function RoomClient({
             {pending.map((i) => (
               <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2">
                 <span>{i.issueKey} — {i.summary}</span>
-                {isModerator && <Button size="sm" onClick={() => pick(i.id)}>Estimate</Button>}
+                {isModerator && (
+                  <Button
+                    size="sm"
+                    onClick={() => setPickDialogIssue({ id: i.id, key: i.issueKey })}
+                  >
+                    Estimate
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -285,7 +313,11 @@ export function RoomClient({
 
       {active && (
         <>
-          <PhaseStepper status={status} />
+          <PhaseStepper
+            status={status}
+            mode={active.issue.pokerMode ?? "advanced"}
+            withEstimation={active.issue.withEstimation ?? true}
+          />
           <IssueCard
             youtrackBaseUrl={youtrackBaseUrl}
             keyId={active.issue.issueKey}
@@ -364,6 +396,19 @@ export function RoomClient({
           }
         }}
       />
+
+      {pickDialogIssue && (
+        <PickIssueDialog
+          open={!!pickDialogIssue}
+          onOpenChange={(v) => { if (!v) setPickDialogIssue(null); }}
+          sessionId={snap.session.id}
+          issueId={pickDialogIssue.id}
+          issueKey={pickDialogIssue.key}
+          defaultMode={userDefaultMode}
+          defaultWithEstimation={userDefaultWithEstimation}
+          onDone={() => { setPickDialogIssue(null); void refresh(); }}
+        />
+      )}
     </div>
   );
 }

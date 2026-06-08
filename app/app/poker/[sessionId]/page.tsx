@@ -34,6 +34,8 @@ export default async function RoomPage({
         initialSnapshot={JSON.parse(JSON.stringify(snap))}
         currentUserId={user.id}
         youtrackBaseUrl={env.YT_BASE_URL}
+        userDefaultMode={(user.defaultPokerMode as "simple" | "advanced" | null) ?? "advanced"}
+        userDefaultWithEstimation={user.defaultWithEstimation ?? true}
       />
     );
   }

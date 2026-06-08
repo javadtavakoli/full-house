@@ -36,6 +36,13 @@
       "when": 1780740588479,
       "tag": "0004_abstain_votes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780945875888,
+      "tag": "0005_poker_modes_and_direct_entry",
+      "breakpoints": true
     }
   ]
 }

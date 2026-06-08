@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, numeric, jsonb, primaryKey, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, integer, numeric, boolean, jsonb, primaryKey, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -7,6 +7,10 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Moderator's preferred default poker mode for new issues. Null → fall back to "advanced".
+  defaultPokerMode: text("default_poker_mode"), // 'simple' | 'advanced'
+  // Moderator's preferred default for whether duration estimation runs. Null → fall back to true.
+  defaultWithEstimation: boolean("default_with_estimation"),
 });
 
 export const oauthAccounts = pgTable(
@@ -66,6 +70,12 @@ export const issues = pgTable(
     status: text("status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     teamId: uuid("team_id"), // v3 placeholder
+    // Per-issue poker mode. Null on legacy rows → treat as "advanced".
+    pokerMode: text("poker_mode"), // 'simple' | 'advanced'
+    // Per-issue duration toggle. Null on legacy rows → treat as true.
+    withEstimation: boolean("with_estimation"),
+    // True when the moderator typed values without running a vote.
+    directEntry: boolean("direct_entry").notNull().default(false),
   },
   (t) => ({
     uniqInSession: uniqueIndex("issues_session_yt_uniq").on(t.sessionId, t.youtrackIssueId),

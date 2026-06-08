@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerUser } from "@/lib/auth/session";
-import { pickIssue } from "@/lib/poker/service";
-import { broadcastIssueChanged, broadcastPhaseChanged } from "@/lib/pusher/server";
+import { setIssueMode } from "@/lib/poker/service";
+import { broadcastIssueChanged } from "@/lib/pusher/server";
 
 const Body = z.object({
   issueId: z.string().uuid(),
-  mode: z.enum(["simple", "advanced"]).optional(),
-  withEstimation: z.boolean().optional(),
+  mode: z.enum(["simple", "advanced"]),
+  withEstimation: z.boolean(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,11 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const next = await pickIssue(id, parsed.data.issueId, user.id, {
-    mode: parsed.data.mode,
-    withEstimation: parsed.data.withEstimation,
-  });
+  await setIssueMode(id, parsed.data.issueId, user.id, parsed.data.mode, parsed.data.withEstimation);
   await broadcastIssueChanged(id, parsed.data.issueId);
-  await broadcastPhaseChanged(id, parsed.data.issueId, next.status, next.round);
-  return NextResponse.json({ status: next.status, round: next.round });
+  return NextResponse.json({ ok: true });
 }

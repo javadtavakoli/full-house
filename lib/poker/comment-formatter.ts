@@ -10,6 +10,13 @@ export type EstimateSummary = {
 export type SummaryInput = {
   date: Date;
   members: string[];
+  // Mode controls how duration phases are rendered.
+  // Defaults to "advanced" + true for backward compat with older callers/tests.
+  mode?: "simple" | "advanced";
+  withEstimation?: boolean;
+  // True when the moderator typed values without voting. Suppresses per-voter
+  // breakdowns and annotates the lines with "(entered directly)".
+  directEntry?: boolean;
   sp: EstimateSummary;
   duration: {
     impl: EstimateSummary;
@@ -19,22 +26,66 @@ export type SummaryInput = {
 };
 
 export function formatSummaryComment(s: SummaryInput): string {
+  const mode = s.mode ?? "advanced";
+  const withEstimation = s.withEstimation ?? true;
+  const directEntry = !!s.directEntry;
+
   const date = s.date.toISOString().slice(0, 10);
   const lines: string[] = [];
-  lines.push(`Estimated via Full House on ${date} by ${s.members.join(", ")}.`);
+  if (directEntry) {
+    lines.push(`Estimated via Full House on ${date} (values entered directly).`);
+  } else {
+    lines.push(`Estimated via Full House on ${date} by ${s.members.join(", ")}.`);
+  }
   lines.push("");
 
   // SP line
   if (s.sp.skipped) {
     lines.push("Story Points: skipped");
   } else if (s.sp.final !== null) {
-    const roundSuffix = s.sp.rounds > 1 ? `  (rounds: ${s.sp.rounds})` : "";
-    lines.push(`Story Points: ${formatNum(s.sp.final)}${roundSuffix}`);
-    for (const line of groupVoteLines(s.sp.votes)) lines.push(`  ${line}`);
+    if (directEntry) {
+      lines.push(`Story Points: ${formatNum(s.sp.final)}  (entered directly)`);
+    } else {
+      const roundSuffix = s.sp.rounds > 1 ? `  (rounds: ${s.sp.rounds})` : "";
+      lines.push(`Story Points: ${formatNum(s.sp.final)}${roundSuffix}`);
+      for (const line of groupVoteLines(s.sp.votes)) lines.push(`  ${line}`);
+    }
   }
   lines.push("");
 
-  // Duration
+  // Duration section
+  if (!withEstimation) {
+    // SP-only mode — no duration line at all.
+    // Trim trailing blank line.
+    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    return lines.join("\n");
+  }
+
+  if (directEntry) {
+    // Direct-entry stores the total in the "impl" slot for both modes.
+    const total = s.duration.impl.final;
+    if (total === null || s.duration.impl.skipped) {
+      lines.push("Duration: skipped");
+    } else {
+      lines.push(`Duration: ${formatNum(total)}h  (entered directly)`);
+    }
+    return lines.join("\n");
+  }
+
+  if (mode === "simple") {
+    // Single "Estimation" phase, stored in the impl slot.
+    const est = s.duration.impl;
+    if (est.skipped || est.final === null) {
+      lines.push("Duration: skipped");
+    } else {
+      const roundSuffix = est.rounds > 1 ? `  (rounds: ${est.rounds})` : "";
+      lines.push(`Duration: ${formatNum(est.final)}h total (Estimation)${roundSuffix}`);
+      for (const line of groupVoteLines(est.votes)) lines.push(`  ${line}`);
+    }
+    return lines.join("\n");
+  }
+
+  // Advanced mode — three phases.
   const phases: Array<{ label: string; key: "impl" | "review" | "test" }> = [
     { label: "Implementation", key: "impl" },
     { label: "Review", key: "review" },

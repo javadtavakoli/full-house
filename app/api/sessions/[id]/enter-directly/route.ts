@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerUser } from "@/lib/auth/session";
-import { pickIssue } from "@/lib/poker/service";
+import { enterDirectly } from "@/lib/poker/service";
 import { broadcastIssueChanged, broadcastPhaseChanged } from "@/lib/pusher/server";
 
 const Body = z.object({
   issueId: z.string().uuid(),
-  mode: z.enum(["simple", "advanced"]).optional(),
-  withEstimation: z.boolean().optional(),
+  sp: z.number().nullable(),
+  durationTotal: z.number().nullable(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,11 +16,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const next = await pickIssue(id, parsed.data.issueId, user.id, {
-    mode: parsed.data.mode,
-    withEstimation: parsed.data.withEstimation,
+  const next = await enterDirectly(id, parsed.data.issueId, user.id, {
+    sp: parsed.data.sp,
+    durationTotal: parsed.data.durationTotal,
   });
   await broadcastIssueChanged(id, parsed.data.issueId);
-  await broadcastPhaseChanged(id, parsed.data.issueId, next.status, next.round);
-  return NextResponse.json({ status: next.status, round: next.round });
+  // Reuse phase-changed so the room refresh picks up the jump-to-completed.
+  await broadcastPhaseChanged(id, parsed.data.issueId, next.status, 1);
+  return NextResponse.json({ status: next.status });
 }

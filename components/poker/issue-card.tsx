@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export function IssueCard({
   youtrackBaseUrl, keyId, summary, description,
@@ -22,7 +24,9 @@ export function IssueCard({
         <span>{summary}</span>
       </h2>
       {description ? (
-        <p className="text-sm text-foreground whitespace-pre-wrap max-w-2xl mx-auto text-left">{description}</p>
+        <div className="text-sm text-foreground max-w-2xl mx-auto text-left prose prose-sm dark:prose-invert">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{description}</ReactMarkdown>
+        </div>
       ) : (
         <p className="text-xs text-muted-foreground italic">No description in YouTrack.</p>
       )}
