@@ -253,7 +253,25 @@ const finalMessage = await client.beta.messages.toolRunner({
 
 console.log(finalMessage.content);`;
 
-export default function TrackPilotPage() {
+const NPM_LATEST = "https://registry.npmjs.org/trackpilot/latest";
+const FALLBACK_VERSION = "0.8.1";
+
+// Fetch the current published version from npm at render time, cached hourly
+// (ISR). Falls back to a known version if the registry is unreachable, so the
+// page never breaks and never goes stale on a release.
+async function getLatestVersion(): Promise<string> {
+  try {
+    const res = await fetch(NPM_LATEST, { next: { revalidate: 3600 } });
+    if (!res.ok) return FALLBACK_VERSION;
+    const data = (await res.json()) as { version?: string };
+    return data.version ?? FALLBACK_VERSION;
+  } catch {
+    return FALLBACK_VERSION;
+  }
+}
+
+export default async function TrackPilotPage() {
+  const version = await getLatestVersion();
   const softwareJsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -264,7 +282,7 @@ export default function TrackPilotPage() {
       "An MCP server for YouTrack Cloud — also a CLI and importable ESM library: read issues, create and update tasks with full custom-field support, dry-run commands, log work, and generate release diffs.",
     url: PAGE_URL,
     downloadUrl: NPM,
-    softwareVersion: "0.8.0",
+    softwareVersion: version,
     license: "https://opensource.org/licenses/MIT",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     author: { "@type": "Person", name: "Javad Tavakoli" },
@@ -289,7 +307,7 @@ export default function TrackPilotPage() {
           <Badge variant="secondary" className="gap-1">
             <Plug className="size-3.5" /> MCP server · CLI · library
           </Badge>
-          <Badge variant="outline">v0.8.0</Badge>
+          <Badge variant="outline">v{version}</Badge>
           <Badge variant="outline">MIT</Badge>
           <Badge variant="outline">Node 20+</Badge>
         </div>
