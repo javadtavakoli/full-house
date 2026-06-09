@@ -2,16 +2,16 @@ import type { Metadata } from "next";
 import { env } from "@/lib/env";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowRight, Clock, Terminal } from "lucide-react";
+import { ArrowRight, Clock, Plug } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Full House — sprint estimation for YouTrack teams",
   description:
-    "Real-time Planning Poker tied to YouTrack: vote story points, estimate implementation/review/test, and sync back to your sprint. Plus TrackPilot (AI-friendly YouTrack CLI) and Ylate (YouTrack time tracker).",
+    "Real-time Planning Poker tied to YouTrack: vote story points, estimate implementation/review/test, and sync back to your sprint. Plus TrackPilot (YouTrack MCP server & CLI) and Ylate (YouTrack time tracker).",
   alternates: { canonical: env.NEXT_PUBLIC_SITE_URL },
   openGraph: {
     title: "Full House",
-    description: "Planning Poker, an AI-friendly CLI, and a time tracker — all for YouTrack teams.",
+    description: "Planning Poker, a YouTrack MCP server & CLI, and a time tracker — all for YouTrack teams.",
     url: env.NEXT_PUBLIC_SITE_URL,
     type: "website",
   },
@@ -25,7 +25,7 @@ export default function Landing() {
         <h1 className="text-5xl font-bold tracking-tight">Full House</h1>
         <p className="text-xl text-muted-foreground">
           Sprint estimation tools that talk to YouTrack. Start with Planning Poker, drive
-          tickets from your terminal with TrackPilot, and track time with Ylate.
+          tickets from Claude or your terminal with TrackPilot, and track time with Ylate.
         </p>
         <div>
           <Button asChild size="lg">
@@ -45,10 +45,10 @@ export default function Landing() {
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <ProductCard
             href="/trackpilot"
-            icon={Terminal}
+            icon={Plug}
             name="TrackPilot"
-            tagline="An AI-friendly CLI and ESM library for driving YouTrack Cloud."
-            body="Read specs, create and update issues, log work, and generate release diffs — from your terminal, your code, or a coding agent like Claude."
+            tagline="An MCP server for YouTrack Cloud — also a CLI and ESM library."
+            body="Let Claude read specs, create and update issues with full field support, dry-run commands, log work, and generate release diffs — or drive it yourself from the terminal or your code."
           />
           <ProductCard
             href="/ylate"
