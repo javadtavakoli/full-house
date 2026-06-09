@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/brand/logo";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -13,7 +14,8 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-6">
-          <Link href="/" className="font-bold tracking-tight">
+          <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
+            <Logo size={26} />
             Full House
           </Link>
           <nav className="flex items-center gap-4 text-sm">
