@@ -89,7 +89,13 @@ export default function SecurityPage() {
             <strong>Pusher Channels</strong> — real-time room events (who voted, when, what they cast).
             Pusher&apos;s privacy policy applies; no PATs cross this boundary.
           </li>
-          <li>No marketing analytics, no ad networks, no other third parties.</li>
+          <li>
+            <strong>Vercel Analytics &amp; Speed Insights</strong> — privacy-friendly, cookieless
+            usage and performance metrics: page views, referrer, country, device and browser type,
+            and Web Vitals. Data is aggregated and anonymous, with no cookies and no cross-site
+            tracking. No PATs or personal YouTrack data cross this boundary.
+          </li>
+          <li>No advertising networks, no cross-site trackers, no cookies.</li>
         </ul>
       </section>
 
