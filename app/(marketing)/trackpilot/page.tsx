@@ -9,9 +9,9 @@ import {
   GitBranch,
   KeyRound,
   ListChecks,
+  MessageSquare,
   Plug,
   ShieldCheck,
-  Terminal,
 } from "lucide-react";
 import { env } from "@/lib/env";
 import { Button } from "@/components/ui/button";
@@ -25,31 +25,33 @@ const GITHUB = "https://github.com/javadtavakoli/trackpilot";
 const NPM = "https://www.npmjs.com/package/trackpilot";
 
 export const metadata: Metadata = {
-  title: "TrackPilot — AI-friendly YouTrack CLI",
+  title: "TrackPilot — YouTrack MCP server, CLI & library",
   description:
-    "An AI-friendly CLI and ESM library for YouTrack Cloud — read issues, create and update tasks, log work, and generate release diffs from your terminal, code, or Claude.",
+    "An MCP server for YouTrack Cloud — also a CLI and ESM library. Read issues, create and update tasks with full custom-field support, dry-run commands, log work, and generate release diffs from Claude, your terminal, or your code.",
   keywords: [
     "TrackPilot",
+    "YouTrack MCP server",
+    "Model Context Protocol",
     "YouTrack CLI",
     "YouTrack API",
     "YouTrack library",
     "YouTrack automation",
     "AI YouTrack agent",
     "Claude YouTrack",
-    "issue tracker CLI",
+    "issue tracker MCP",
   ],
   alternates: { canonical: PAGE_URL },
   openGraph: {
-    title: "TrackPilot — AI-friendly YouTrack CLI & library",
+    title: "TrackPilot — YouTrack MCP server, CLI & library",
     description:
-      "Drive YouTrack Cloud from your terminal, your code, or an AI agent. JSON output, validation-before-write, OS-keyring token storage.",
+      "Drive YouTrack Cloud from Claude, your terminal, or your code. 14 MCP tools, full custom-field support, validation-before-write, OS-keyring token storage.",
     url: PAGE_URL,
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "TrackPilot — AI-friendly YouTrack CLI & library",
-    description: "Drive YouTrack Cloud from your terminal, your code, or Claude.",
+    title: "TrackPilot — YouTrack MCP server, CLI & library",
+    description: "Drive YouTrack Cloud from Claude, your terminal, or your code.",
   },
   robots: { index: true, follow: true },
 };
@@ -57,20 +59,30 @@ export const metadata: Metadata = {
 const FAQ = [
   {
     q: "What is TrackPilot?",
-    a: "TrackPilot is an AI-friendly CLI and importable ESM library for driving YouTrack Cloud. It reads issue specs, creates and updates tasks, comments, searches, logs work, and generates release diffs by extracting issue IDs from git history.",
+    a: "TrackPilot is an MCP server for YouTrack Cloud — also usable as a CLI and an importable ESM library. It reads issue specs, creates and updates tasks (with full custom-field, type, assignee, tag, and link support), comments, searches, logs work, dry-runs commands, and generates release diffs from git history. The MCP surface exposes 14 tools with full parity to the CLI and library.",
+  },
+  {
+    q: "How do I use TrackPilot with Claude?",
+    a: "Run it as a local MCP (Model Context Protocol) server with `trackpilot mcp`, then add it to Claude Code (`claude mcp add trackpilot -- npx trackpilot mcp`) or Claude Desktop. Claude can then search, read, create, update, comment, log work, preview and apply commands, and produce release diffs — prompting you for approval before each write.",
   },
   {
     q: "How do I install TrackPilot?",
     a: "Run it without installing via npx trackpilot, pnpm dlx trackpilot, or yarn dlx trackpilot, or install it globally with npm i -g trackpilot. To use it as a library, add the trackpilot package to your project.",
   },
   {
-    q: "Can I use TrackPilot with AI models like Claude?",
-    a: "Yes. TrackPilot can run as a local MCP (Model Context Protocol) server with `trackpilot mcp`, exposing YouTrack read and write tools to clients like Claude Code and Claude Desktop. You can also point a coding agent at the JSON-returning CLI, or import the library and expose its methods as Claude API tools.",
-  },
-  {
     q: "Where are my YouTrack credentials stored?",
     a: "The CLI stores your token in the OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service). The non-secret base URL lives in a local config file. In CI, pass credentials via environment variables.",
   },
+];
+
+// Natural-language prompts that exercise the MCP tools end-to-end.
+const EXAMPLE_PROMPTS = [
+  "What are my unresolved issues in ABC?",
+  "File a bug in ABC: the login button is unresponsive on Safari. Set Priority to Major, assign it to jdoe, and tag it regression.",
+  "Read ABC-100, break it into subtasks, and create each one as a subtask of ABC-100.",
+  "Move ABC-123 to In Progress and add a comment that I've started.",
+  "Before you set ABC-5 to Fixed, dry-run the command to confirm it's valid.",
+  "Generate the QA release list for main..next.",
 ];
 
 const COMMANDS: { name: string; signature: string; desc: string; example: string }[] = [
@@ -95,11 +107,11 @@ const COMMANDS: { name: string; signature: string; desc: string; example: string
   {
     name: "create",
     signature: "trackpilot create --project <KEY> --summary <text> [...]",
-    desc: "Create a task in one operation. Fields, users, and tags are validated client-side before any write, with “did you mean” suggestions.",
+    desc: "Create a task in one operation, with type, assignee, custom fields, tags, and links. Fields, users, and tags are validated client-side before any write, with “did you mean” suggestions.",
     example: [
       "trackpilot create --project ABC --summary \"Release\" --type Task \\",
-      "  --assignee \"Javad Tavakoli\" \\",
-      "  --field \"Team=Front-End\" --field \"Estimation=1d\" \\",
+      "  --assignee \"jdoe\" \\",
+      "  --field \"Priority=Major\" --field \"Team=Front-End\" \\",
       "  --tag scope:infra --relates ABC-211",
     ].join("\n"),
   },
@@ -118,7 +130,7 @@ const COMMANDS: { name: string; signature: string; desc: string; example: string
   {
     name: "fields",
     signature: "trackpilot fields <KEY>",
-    desc: "List custom fields, allowed values, and tags for a project — useful for discovery.",
+    desc: "List custom fields, allowed values, which fields are required, and tags for a project — useful for discovery.",
     example: "trackpilot fields ABC",
   },
   {
@@ -136,7 +148,7 @@ const COMMANDS: { name: string; signature: string; desc: string; example: string
   {
     name: "mcp",
     signature: "trackpilot mcp",
-    desc: "Run an MCP (Model Context Protocol) server over stdio, exposing YouTrack tools to clients like Claude. Uses the same auth as the CLI.",
+    desc: "Run an MCP (Model Context Protocol) server over stdio, exposing all 14 YouTrack tools to clients like Claude. Uses the same auth as the CLI.",
     example: "trackpilot mcp",
   },
 ];
@@ -249,10 +261,10 @@ export default function TrackPilotPage() {
     applicationCategory: "DeveloperApplication",
     operatingSystem: "macOS, Windows, Linux",
     description:
-      "An AI-friendly CLI and importable ESM library for driving YouTrack Cloud: read issues, create and update tasks, log work, and generate release diffs.",
+      "An MCP server for YouTrack Cloud — also a CLI and importable ESM library: read issues, create and update tasks with full custom-field support, dry-run commands, log work, and generate release diffs.",
     url: PAGE_URL,
     downloadUrl: NPM,
-    softwareVersion: "0.6.0",
+    softwareVersion: "0.8.0",
     license: "https://opensource.org/licenses/MIT",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     author: { "@type": "Person", name: "Javad Tavakoli" },
@@ -275,20 +287,23 @@ export default function TrackPilotPage() {
       <header className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="gap-1">
-            <Terminal className="size-3.5" /> CLI + library
+            <Plug className="size-3.5" /> MCP server · CLI · library
           </Badge>
-          <Badge variant="outline">v0.6.0</Badge>
+          <Badge variant="outline">v0.8.0</Badge>
           <Badge variant="outline">MIT</Badge>
           <Badge variant="outline">Node 20+</Badge>
         </div>
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">TrackPilot</h1>
         <p className="text-xl text-muted-foreground">
-          An AI-friendly CLI and importable ESM library for driving YouTrack Cloud. Read issue
-          specs, create and update tasks, comment, search, log work, and generate release diffs —
-          from your terminal, your code, or an AI agent like Claude.
+          An MCP server for YouTrack Cloud — also a CLI and an importable ESM library. Read issue
+          specs, create and update tasks with full custom-field support, comment, search, log work,
+          dry-run commands, and generate release diffs — from Claude, your terminal, or your code.
         </p>
         <div className="flex flex-wrap gap-3">
           <Button asChild size="lg">
+            <a href="#ai">Use with Claude</a>
+          </Button>
+          <Button asChild size="lg" variant="outline">
             <a href="#install">Install</a>
           </Button>
           <Button asChild size="lg" variant="outline">
@@ -307,9 +322,13 @@ export default function TrackPilotPage() {
       {/* Features */}
       <Section title="Why TrackPilot">
         <FeatureGrid>
-          <Feature icon={Boxes} title="Dual interface">
-            Use it as a command-line tool or import it as a JavaScript library — same capabilities,
-            your choice of surface.
+          <Feature icon={Plug} title="MCP-native">
+            Run it as an MCP server and Claude drives YouTrack directly — 14 tools with full parity
+            to the CLI and library.
+          </Feature>
+          <Feature icon={Boxes} title="Triple interface">
+            One codebase, three surfaces: an MCP server for AI agents, a command-line tool, and a
+            JavaScript library.
           </Feature>
           <Feature icon={FileJson} title="JSON everywhere">
             Every command returns JSON, readable by humans and trivially parseable by scripts and
@@ -317,7 +336,7 @@ export default function TrackPilotPage() {
           </Feature>
           <Feature icon={ShieldCheck} title="Validation before write">
             Field values, users, and tags are validated client-side before any write — with “did you
-            mean” suggestions for unknowns.
+            mean” suggestions, and required fields surfaced up front.
           </Feature>
           <Feature icon={KeyRound} title="Secure token storage">
             Tokens live in the OS keyring — macOS Keychain, Windows Credential Manager, Linux Secret
@@ -325,9 +344,6 @@ export default function TrackPilotPage() {
           </Feature>
           <Feature icon={GitBranch} title="Git-aware releases">
             Extract issue IDs from commit history to produce QA-ready release reports.
-          </Feature>
-          <Feature icon={Cpu} title="Runs anywhere">
-            Node 20+, browsers, Electron, and Tauri. Bring your own fetch when you need to.
           </Feature>
         </FeatureGrid>
       </Section>
@@ -392,6 +408,94 @@ export default function TrackPilotPage() {
         </div>
       </Section>
 
+      {/* Use with Claude */}
+      <Section
+        id="ai"
+        title="Use it with Claude & other AI models"
+        description="TrackPilot is built MCP-first. JSON output plus validation-before-write means an agent can read a spec, draft subtasks, and apply commands without corrupting your tracker. Three ways to wire it up:"
+      >
+        {/* Method 1 — MCP server */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Plug className="size-5" />
+            <h3 className="font-semibold">1. Run it as an MCP server (recommended)</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            <code className="text-foreground">trackpilot mcp</code> runs a local Model Context
+            Protocol server over stdio, exposing YouTrack to MCP clients like Claude. It uses the
+            same auth as the CLI — set your base URL and token first, or pass them through the client
+            config.
+          </p>
+          <p className="text-sm font-medium">Claude Code:</p>
+          <CodeBlock language="bash" code={CLAUDE_MCP_CLI} />
+          <p className="text-sm font-medium">
+            Claude Desktop — add to <code className="text-foreground">claude_desktop_config.json</code>:
+          </p>
+          <CodeBlock language="json" code={CLAUDE_MCP_DESKTOP} />
+          <p className="text-xs text-muted-foreground">
+            Exposes the full TrackPilot surface — read tools (
+            <code className="text-foreground">search</code>,{" "}
+            <code className="text-foreground">read_issue</code>,{" "}
+            <code className="text-foreground">list_projects</code>,{" "}
+            <code className="text-foreground">project_schema</code> (flags which fields are{" "}
+            <strong>required</strong>),{" "}
+            <code className="text-foreground">list_users</code>,{" "}
+            <code className="text-foreground">list_tags</code>,{" "}
+            <code className="text-foreground">whoami</code>), write tools (
+            <code className="text-foreground">create_issue</code> and{" "}
+            <code className="text-foreground">update_issue</code> with full type, assignee,
+            custom-field, tag, and link support, plus{" "}
+            <code className="text-foreground">add_comment</code>,{" "}
+            <code className="text-foreground">log_work</code>,{" "}
+            <code className="text-foreground">apply_command</code>), and workflow tools (
+            <code className="text-foreground">preview_command</code> to dry-run a command,{" "}
+            <code className="text-foreground">release</code> for a QA diff). 14 tools in all — full
+            parity with the CLI and library. Your client prompts for approval before each write.
+          </p>
+
+          <p className="mt-2 text-sm font-medium">Example prompts you can give Claude:</p>
+          <ul className="flex flex-col gap-2">
+            {EXAMPLE_PROMPTS.map((p) => (
+              <li key={p} className="flex gap-2 text-sm text-muted-foreground">
+                <MessageSquare className="mt-0.5 size-4 shrink-0" />
+                <span>“{p}”</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Method 2 — coding agent at the CLI */}
+        <div className="mt-6 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Bot className="size-5" />
+            <h3 className="font-semibold">2. Point a coding agent at the CLI</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Give Claude Code (or any agent that can run a shell) the CLI and a short playbook. The
+            agent reads, drafts, creates, and reports — parsing JSON at each step.
+          </p>
+          <CodeBlock language="bash" code={CLAUDE_CLI_PROMPT} />
+        </div>
+
+        {/* Method 3 — library as Claude API tools */}
+        <div className="mt-6 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Cpu className="size-5" />
+            <h3 className="font-semibold">3. Wrap the library as Claude API tools</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Import <code className="text-foreground">createApi</code> and expose its methods as
+            tools for the Claude API. The SDK&rsquo;s tool runner handles the agent loop.
+          </p>
+          <CodeBlock language="typescript" code={CLAUDE_TOOLS_EXAMPLE} />
+          <p className="text-xs text-muted-foreground">
+            Requires <code className="text-foreground">@anthropic-ai/sdk</code> and{" "}
+            <code className="text-foreground">zod</code>. The same pattern works for any tool-calling
+            model — TrackPilot just provides the typed YouTrack methods.
+          </p>
+        </div>
+      </Section>
+
       {/* CLI reference */}
       <Section
         title="CLI commands"
@@ -429,79 +533,6 @@ export default function TrackPilotPage() {
           </a>{" "}
           for the full reference.
         </p>
-      </Section>
-
-      {/* Use with Claude */}
-      <Section
-        id="ai"
-        title="Use it with Claude & other AI models"
-        description="TrackPilot is built for AI workflows. JSON output plus validation-before-write means an agent can read a spec, draft subtasks, and apply commands without corrupting your tracker. Three ways to wire it up:"
-      >
-        {/* Method 1 — MCP server */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <Plug className="size-5" />
-            <h3 className="font-semibold">1. Run it as an MCP server (recommended)</h3>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            <code className="text-foreground">trackpilot mcp</code> runs a local Model Context
-            Protocol server over stdio, exposing YouTrack to MCP clients like Claude. It uses the
-            same auth as the CLI — set your base URL and token first, or pass them through the client
-            config.
-          </p>
-          <p className="text-sm font-medium">Claude Code:</p>
-          <CodeBlock language="bash" code={CLAUDE_MCP_CLI} />
-          <p className="text-sm font-medium">
-            Claude Desktop — add to <code className="text-foreground">claude_desktop_config.json</code>:
-          </p>
-          <CodeBlock language="json" code={CLAUDE_MCP_DESKTOP} />
-          <p className="text-xs text-muted-foreground">
-            Exposes read tools (<code className="text-foreground">search</code>,{" "}
-            <code className="text-foreground">read_issue</code>,{" "}
-            <code className="text-foreground">list_projects</code>,{" "}
-            <code className="text-foreground">project_schema</code>,{" "}
-            <code className="text-foreground">list_users</code>,{" "}
-            <code className="text-foreground">list_tags</code>,{" "}
-            <code className="text-foreground">whoami</code>) and write tools (
-            <code className="text-foreground">create_issue</code>,{" "}
-            <code className="text-foreground">update_issue</code>,{" "}
-            <code className="text-foreground">add_comment</code>,{" "}
-            <code className="text-foreground">log_work</code>,{" "}
-            <code className="text-foreground">apply_command</code>). Your client prompts for approval
-            before each write.
-          </p>
-        </div>
-
-        {/* Method 2 — coding agent at the CLI */}
-        <div className="mt-6 flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <Bot className="size-5" />
-            <h3 className="font-semibold">2. Point a coding agent at the CLI</h3>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Give Claude Code (or any agent that can run a shell) the CLI and a short playbook. The
-            agent reads, drafts, creates, and reports — parsing JSON at each step.
-          </p>
-          <CodeBlock language="bash" code={CLAUDE_CLI_PROMPT} />
-        </div>
-
-        {/* Method 3 — library as Claude API tools */}
-        <div className="mt-6 flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <Cpu className="size-5" />
-            <h3 className="font-semibold">3. Wrap the library as Claude API tools</h3>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Import <code className="text-foreground">createApi</code> and expose its methods as
-            tools for the Claude API. The SDK&rsquo;s tool runner handles the agent loop.
-          </p>
-          <CodeBlock language="typescript" code={CLAUDE_TOOLS_EXAMPLE} />
-          <p className="text-xs text-muted-foreground">
-            Requires <code className="text-foreground">@anthropic-ai/sdk</code> and{" "}
-            <code className="text-foreground">zod</code>. The same pattern works for any tool-calling
-            model — TrackPilot just provides the typed YouTrack methods.
-          </p>
-        </div>
       </Section>
 
       {/* FAQ */}
