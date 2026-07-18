@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSessionRoom } from "@/hooks/use-session-room";
+import { ytFetch } from "@/lib/youtrack/client-fetch";
 import { usePresencePing } from "@/hooks/use-presence-ping";
 import { CardDeck } from "@/components/poker/card-deck";
 import { VoterList } from "@/components/poker/voter-list";
@@ -79,6 +80,7 @@ export function RoomClient({
   const [submitting, setSubmitting] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [pickDialogIssue, setPickDialogIssue] = useState<{ id: string; key: string } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   usePresencePing(initialSnapshot.session.id);
 
@@ -116,6 +118,42 @@ export function RoomClient({
     const id = setInterval(() => { void refresh(); }, 20_000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // Manual "Refresh from YouTrack" — moderator-triggered, with a spinner + toast.
+  const refreshFromYouTrack = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await ytFetch(`/api/sessions/${snap.session.id}/resync`, { method: "POST" });
+      if (!r.ok) {
+        toast.error((await r.text()) || "Refresh failed");
+        return;
+      }
+      const { updated, inserted } = (await r.json()) as { updated: number; inserted: number };
+      await refresh();
+      toast.success(`Synced from YouTrack — ${updated} updated, ${inserted} new`);
+    } catch {
+      toast.error("Could not reach YouTrack");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [snap.session.id, refresh]);
+
+  // On mount (moderator only): render the cached snapshot first, then resync in
+  // the background and refresh. Best-effort — a missing/expired token must not
+  // block first paint or crash the room, so failures are swallowed silently.
+  const didMountResync = useRef(false);
+  useEffect(() => {
+    if (!isModerator || didMountResync.current) return;
+    didMountResync.current = true;
+    void (async () => {
+      try {
+        const r = await ytFetch(`/api/sessions/${snap.session.id}/resync`, { method: "POST" });
+        if (r.ok) await refresh();
+      } catch {
+        /* best-effort; keep showing the cached snapshot */
+      }
+    })();
+  }, [isModerator, snap.session.id, refresh]);
 
   // reset card when active issue or phase changes
   useEffect(() => { setMyCard(null); setAbstained(false); }, [active?.issue.id, status]);
@@ -218,6 +256,17 @@ export function RoomClient({
           <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(window.location.href); toast("URL copied"); }}>
             Copy invite URL
           </Button>
+          {isModerator && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshFromYouTrack}
+              disabled={refreshing}
+              title="Re-read this sprint's issues from YouTrack"
+            >
+              {refreshing ? "Refreshing…" : "Refresh from YouTrack"}
+            </Button>
+          )}
           {isModerator && (
             <Button
               variant="outline"
