@@ -771,18 +771,17 @@ export async function gatherSummary(issueId: string): Promise<SummaryInput> {
     };
   }
 
+  const phaseList = resolvePhases(issue);
+  const phaseSummaries = await Promise.all(
+    phaseList.map(async (p) => ({ name: p.name, summary: await summaryFor(`duration:${p.id}`) })),
+  );
+
   return {
     date: new Date(),
     members: memberNames,
-    mode: ((issue.pokerMode as PokerMode | null) ?? "advanced"),
-    withEstimation: issue.withEstimation ?? true,
     directEntry: !!issue.directEntry,
     sp: await summaryFor("sp:"),
-    duration: {
-      impl: await summaryFor("duration:impl"),
-      review: await summaryFor("duration:review"),
-      test: await summaryFor("duration:test"),
-    },
+    phases: phaseSummaries,
   };
 }
 

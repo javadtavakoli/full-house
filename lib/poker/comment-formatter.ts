@@ -7,29 +7,20 @@ export type EstimateSummary = {
   votes: Vote[];
 };
 
+export type PhaseSummary = { name: string; summary: EstimateSummary };
+
 export type SummaryInput = {
   date: Date;
   members: string[];
-  // Mode controls how duration phases are rendered.
-  // Defaults to "advanced" + true for backward compat with older callers/tests.
-  mode?: "simple" | "advanced";
-  withEstimation?: boolean;
   // True when the moderator typed values without voting. Suppresses per-voter
   // breakdowns and annotates the lines with "(entered directly)".
   directEntry?: boolean;
   sp: EstimateSummary;
-  duration: {
-    impl: EstimateSummary;
-    review: EstimateSummary;
-    test: EstimateSummary;
-  };
+  phases: PhaseSummary[]; // ordered duration phases; empty = SP-only
 };
 
 export function formatSummaryComment(s: SummaryInput): string {
-  const mode = s.mode ?? "advanced";
-  const withEstimation = s.withEstimation ?? true;
   const directEntry = !!s.directEntry;
-
   const date = s.date.toISOString().slice(0, 10);
   const lines: string[] = [];
   if (directEntry) {
@@ -54,61 +45,45 @@ export function formatSummaryComment(s: SummaryInput): string {
   lines.push("");
 
   // Duration section
-  if (!withEstimation) {
-    // SP-only mode — no duration line at all.
-    // Trim trailing blank line.
+  if (s.phases.length === 0) {
     while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
     return lines.join("\n");
   }
 
   if (directEntry) {
-    // Direct-entry stores the total in the "impl" slot for both modes.
-    const total = s.duration.impl.final;
-    if (total === null || s.duration.impl.skipped) {
-      lines.push("Duration: skipped");
-    } else {
-      lines.push(`Duration: ${formatNum(total)}h  (entered directly)`);
-    }
+    const total = s.phases.reduce((sum, p) => sum + (p.summary.final ?? 0), 0);
+    const anyFinal = s.phases.some((p) => !p.summary.skipped && p.summary.final !== null);
+    lines.push(anyFinal ? `Duration: ${formatNum(total)}h  (entered directly)` : "Duration: skipped");
     return lines.join("\n");
   }
 
-  if (mode === "simple") {
-    // Single "Estimation" phase, stored in the impl slot.
-    const est = s.duration.impl;
-    if (est.skipped || est.final === null) {
-      lines.push("Duration: skipped");
-    } else {
-      const roundSuffix = est.rounds > 1 ? `  (rounds: ${est.rounds})` : "";
-      lines.push(`Duration: ${formatNum(est.final)}h total (Estimation)${roundSuffix}`);
-      for (const line of groupVoteLines(est.votes)) lines.push(`  ${line}`);
-    }
-    return lines.join("\n");
-  }
-
-  // Advanced mode — three phases.
-  const phases: Array<{ label: string; key: "impl" | "review" | "test" }> = [
-    { label: "Implementation", key: "impl" },
-    { label: "Review", key: "review" },
-    { label: "Test", key: "test" },
-  ];
-  const allSkipped = phases.every((p) => s.duration[p.key].skipped);
+  const allSkipped = s.phases.every((p) => p.summary.skipped);
   if (allSkipped) {
     lines.push("Duration: skipped");
-  } else {
-    const total = phases.reduce((sum, p) => sum + (s.duration[p.key].final ?? 0), 0);
-    lines.push(`Duration: ${formatNum(total)}h total`);
-    for (const p of phases) {
-      const e = s.duration[p.key];
-      if (e.skipped) {
-        lines.push(`  ${p.label}: skipped`);
-        continue;
-      }
-      const roundSuffix = e.rounds > 1 ? `  (rounds: ${e.rounds})` : "";
-      lines.push(`  ${p.label}: ${formatNum(e.final ?? 0)}h${roundSuffix}`);
-      for (const line of groupVoteLines(e.votes)) lines.push(`    ${line}`);
-    }
+    return lines.join("\n");
   }
 
+  const total = s.phases.reduce((sum, p) => sum + (p.summary.final ?? 0), 0);
+  // Single-phase lists render inline like the old "simple" mode; multi-phase break down.
+  if (s.phases.length === 1) {
+    const e = s.phases[0]!.summary;
+    const roundSuffix = e.rounds > 1 ? `  (rounds: ${e.rounds})` : "";
+    lines.push(`Duration: ${formatNum(e.final ?? 0)}h total (${s.phases[0]!.name})${roundSuffix}`);
+    for (const line of groupVoteLines(e.votes)) lines.push(`  ${line}`);
+    return lines.join("\n");
+  }
+
+  lines.push(`Duration: ${formatNum(total)}h total`);
+  for (const p of s.phases) {
+    const e = p.summary;
+    if (e.skipped) {
+      lines.push(`  ${p.name}: skipped`);
+      continue;
+    }
+    const roundSuffix = e.rounds > 1 ? `  (rounds: ${e.rounds})` : "";
+    lines.push(`  ${p.name}: ${formatNum(e.final ?? 0)}h${roundSuffix}`);
+    for (const line of groupVoteLines(e.votes)) lines.push(`    ${line}`);
+  }
   return lines.join("\n");
 }
 
