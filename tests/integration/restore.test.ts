@@ -60,9 +60,10 @@ describe("restoreIssue", () => {
       .where(eq(issues.id, issue!.id));
     expect(afterRestore!.status).toBe("pending");
 
-    // Pick the same issue again — the state machine accepts pending → sp_voting.
+    // Pick the same issue again — the state machine accepts pending → voting (SP, phaseIndex -1).
     const picked = await pickIssue(session.id, issue!.id, mod.id);
-    expect(picked.status).toBe("sp_voting");
+    expect(picked.status).toBe("voting");
+    expect(picked.phaseIndex).toBe(-1);
   });
 
   it("restoring a non-skipped issue is rejected", async () => {

@@ -26,13 +26,15 @@ describe("voting", () => {
     expect(firstIssue).toBeDefined();
 
     const picked = await pickIssue(session.id, firstIssue!.id, mod.id);
-    expect(picked.status).toBe("sp_voting");
+    expect(picked.status).toBe("voting");
+    expect(picked.phaseIndex).toBe(-1);
 
     await castVote(session.id, firstIssue!.id, mod.id, 5);
     await castVote(session.id, firstIssue!.id, voter.id, 3);
 
     const revealed = await reveal(session.id, firstIssue!.id, mod.id);
-    expect(revealed.status).toBe("sp_revealed");
+    expect(revealed.status).toBe("revealed");
+    expect(revealed.phaseIndex).toBe(-1);
   });
 
   it("non-moderator cannot pick", async () => {

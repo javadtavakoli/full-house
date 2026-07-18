@@ -58,7 +58,7 @@ export async function syncIssue(
   const spFinal: number | null =
     overrides?.spOverride !== undefined ? overrides.spOverride : computedSp;
 
-  const phases = [summary.duration.impl, summary.duration.review, summary.duration.test];
+  const phases = summary.phases.map((p) => p.summary);
   const anyPhaseFinal = phases.some((p) => !p.skipped && p.final !== null);
   const phaseTotal = phases.reduce((s, p) => s + (p.final ?? 0), 0);
   const computedDuration = anyPhaseFinal ? phaseTotal : null;

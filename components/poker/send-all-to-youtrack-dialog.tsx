@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ytFetch } from "@/lib/youtrack/client-fetch";
 
-type PerPhase = { impl: number | null; review: number | null; test: number | null };
+type PerPhase = Array<{ name: string; value: number | null }>;
 type Summary = { sp: number | null; durationTotal: number | null; perPhase: PerPhase | null };
 
 export type ReviewIssue = {
@@ -84,7 +84,7 @@ export function SendAllToYoutrackDialog({
                 data.durationTotal !== null && data.durationTotal !== undefined
                   ? String(data.durationTotal)
                   : "",
-              perPhase: data.perPhase,
+              perPhase: data.perPhase ?? null,
               status: "pending",
             },
           }));
@@ -265,10 +265,9 @@ export function SendAllToYoutrackDialog({
                       disabled={row.loading || sending || ending || row.status === "sent"}
                     />
                   </label>
-                  {row.perPhase && (
-                    <span className="text-muted-foreground">
-                      (impl {row.perPhase.impl ?? "—"}h · review {row.perPhase.review ?? "—"}h ·
-                      test {row.perPhase.test ?? "—"}h)
+                  {row.perPhase && row.perPhase.length > 1 && (
+                    <span className="text-xs text-muted-foreground">
+                      ({row.perPhase.map((p) => `${p.name} ${p.value ?? "—"}h`).join(" · ")})
                     </span>
                   )}
                 </div>

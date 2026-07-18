@@ -1,165 +1,147 @@
 import { describe, it, expect } from "vitest";
-import { reduceIssue, IssueState } from "./state-machine";
+import { reduceIssue, phaseInfo, type IssueState, type Phase } from "./state-machine";
 
-const A = { mode: "advanced", withEstimation: true } as const;
-const S = { mode: "simple", withEstimation: true } as const;
+const ADV: Phase[] = [
+  { id: "impl", name: "Implementation" },
+  { id: "review", name: "Review" },
+  { id: "test", name: "Test" },
+];
+const SIMPLE: Phase[] = [{ id: "impl", name: "Estimation" }];
+const NONE: Phase[] = [];
+const CUSTOM2: Phase[] = [
+  { id: "a", name: "Design" },
+  { id: "b", name: "Build" },
+];
+const CUSTOM4: Phase[] = [
+  { id: "a", name: "Design" },
+  { id: "b", name: "Build" },
+  { id: "c", name: "QA" },
+  { id: "d", name: "Docs" },
+];
+
+const pending: IssueState = { status: "pending", phaseIndex: -1, round: 1 };
 
 describe("state machine", () => {
-  it("happy path SP → impl → review → test → completed (advanced + withEstimation)", () => {
-    let s: IssueState = { status: "pending", round: 1, ...A };
-    s = reduceIssue(s, { type: "pick" });
-    expect(s.status).toBe("sp_voting");
-    s = reduceIssue(s, { type: "reveal" });
-    expect(s.status).toBe("sp_revealed");
-    s = reduceIssue(s, { type: "submit" });
-    expect(s.status).toBe("dur_impl_voting");
-    s = reduceIssue(reduceIssue(s, { type: "reveal" }), { type: "submit" });
-    expect(s.status).toBe("dur_review_voting");
-    s = reduceIssue(reduceIssue(s, { type: "reveal" }), { type: "submit" });
-    expect(s.status).toBe("dur_test_voting");
-    s = reduceIssue(reduceIssue(s, { type: "reveal" }), { type: "submit" });
+  it("happy path SP -> impl -> review -> test -> completed (advanced)", () => {
+    let s = reduceIssue(pending, { type: "pick" }, ADV);
+    expect(s).toEqual({ status: "voting", phaseIndex: -1, round: 1 });
+    s = reduceIssue(s, { type: "reveal" }, ADV);
+    expect(s).toEqual({ status: "revealed", phaseIndex: -1, round: 1 });
+    s = reduceIssue(s, { type: "submit" }, ADV);
+    expect(s).toEqual({ status: "voting", phaseIndex: 0, round: 1 });
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, ADV), { type: "submit" }, ADV);
+    expect(s).toEqual({ status: "voting", phaseIndex: 1, round: 1 });
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, ADV), { type: "submit" }, ADV);
+    expect(s).toEqual({ status: "voting", phaseIndex: 2, round: 1 });
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, ADV), { type: "submit" }, ADV);
     expect(s.status).toBe("completed");
   });
 
-  it("simple + withEstimation: SP → impl (Estimation) → completed", () => {
-    let s: IssueState = { status: "pending", round: 1, ...S };
-    s = reduceIssue(s, { type: "pick" });
-    expect(s.status).toBe("sp_voting");
-    s = reduceIssue(reduceIssue(s, { type: "reveal" }), { type: "submit" });
-    expect(s.status).toBe("dur_impl_voting");
-    s = reduceIssue(reduceIssue(s, { type: "reveal" }), { type: "submit" });
-    // simple mode never visits review/test
+  it("simple (1 phase): SP -> impl -> completed", () => {
+    let s = reduceIssue(pending, { type: "pick" }, SIMPLE);
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, SIMPLE), { type: "submit" }, SIMPLE);
+    expect(s).toEqual({ status: "voting", phaseIndex: 0, round: 1 });
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, SIMPLE), { type: "submit" }, SIMPLE);
     expect(s.status).toBe("completed");
   });
 
-  it("simple + !withEstimation: SP only → completed", () => {
-    let s: IssueState = { status: "pending", round: 1, mode: "simple", withEstimation: false };
-    s = reduceIssue(s, { type: "pick" });
-    s = reduceIssue(reduceIssue(s, { type: "reveal" }), { type: "submit" });
+  it("empty phase list (withEstimation=false): SP only -> completed", () => {
+    let s = reduceIssue(pending, { type: "pick" }, NONE);
+    expect(s).toEqual({ status: "voting", phaseIndex: -1, round: 1 });
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, NONE), { type: "submit" }, NONE);
     expect(s.status).toBe("completed");
   });
 
-  it("advanced + !withEstimation: SP only → completed", () => {
-    let s: IssueState = { status: "pending", round: 1, mode: "advanced", withEstimation: false };
-    s = reduceIssue(s, { type: "pick" });
-    s = reduceIssue(reduceIssue(s, { type: "reveal" }), { type: "submit" });
+  it("custom 2-phase list [Design, Build] runs SP -> 0 -> 1 -> completed", () => {
+    let s = reduceIssue(pending, { type: "pick" }, CUSTOM2);
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, CUSTOM2), { type: "submit" }, CUSTOM2);
+    expect(s.phaseIndex).toBe(0);
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, CUSTOM2), { type: "submit" }, CUSTOM2);
+    expect(s.phaseIndex).toBe(1);
+    s = reduceIssue(reduceIssue(s, { type: "reveal" }, CUSTOM2), { type: "submit" }, CUSTOM2);
     expect(s.status).toBe("completed");
   });
 
-  it("revote returns to same voting state and increments round", () => {
-    let s: IssueState = { status: "sp_revealed", round: 1, ...A };
-    s = reduceIssue(s, { type: "revote" });
-    expect(s).toEqual({ status: "sp_voting", round: 2, ...A });
-  });
-
-  it("skip phase advances past current phase without finalizing", () => {
-    let s: IssueState = { status: "sp_voting", round: 1, ...A };
-    s = reduceIssue(s, { type: "skipPhase" });
-    expect(s.status).toBe("dur_impl_voting");
-    expect(s.round).toBe(1);
-  });
-
-  it("skipPhase from simple-mode impl completes the issue", () => {
-    let s: IssueState = { status: "dur_impl_voting", round: 1, ...S };
-    s = reduceIssue(s, { type: "skipPhase" });
+  it("custom 4-phase list visits every index then completes", () => {
+    let s = reduceIssue(pending, { type: "pick" }, CUSTOM4);
+    const seen: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      if (s.status === "completed") break;
+      seen.push(s.phaseIndex);
+      s = reduceIssue(reduceIssue(s, { type: "reveal" }, CUSTOM4), { type: "submit" }, CUSTOM4);
+    }
+    expect(seen).toEqual([-1, 0, 1, 2, 3]);
     expect(s.status).toBe("completed");
   });
 
-  it("skipPhase from SP with !withEstimation completes the issue", () => {
-    let s: IssueState = { status: "sp_voting", round: 1, mode: "advanced", withEstimation: false };
-    s = reduceIssue(s, { type: "skipPhase" });
+  it("revote returns to same voting phase and increments round", () => {
+    const s = reduceIssue({ status: "revealed", phaseIndex: -1, round: 1 }, { type: "revote" }, ADV);
+    expect(s).toEqual({ status: "voting", phaseIndex: -1, round: 2 });
+  });
+
+  it("skipPhase advances past current phase without finalizing", () => {
+    const s = reduceIssue({ status: "voting", phaseIndex: -1, round: 1 }, { type: "skipPhase" }, ADV);
+    expect(s).toEqual({ status: "voting", phaseIndex: 0, round: 1 });
+  });
+
+  it("skipPhase from last phase completes the issue", () => {
+    const s = reduceIssue({ status: "voting", phaseIndex: 0, round: 1 }, { type: "skipPhase" }, SIMPLE);
+    expect(s.status).toBe("completed");
+  });
+
+  it("skipPhase from SP with empty list completes the issue", () => {
+    const s = reduceIssue({ status: "voting", phaseIndex: -1, round: 1 }, { type: "skipPhase" }, NONE);
     expect(s.status).toBe("completed");
   });
 
   it("skip issue from any non-completed state moves to skipped", () => {
-    let s: IssueState = { status: "dur_review_revealed", round: 2, ...A };
-    s = reduceIssue(s, { type: "skipIssue" });
+    const s = reduceIssue({ status: "revealed", phaseIndex: 1, round: 2 }, { type: "skipIssue" }, ADV);
     expect(s.status).toBe("skipped");
   });
 
-  describe("restore", () => {
-    it("restoring a skipped issue returns it to pending", () => {
-      const s = reduceIssue({ status: "skipped", round: 2, ...A }, { type: "restore" });
-      expect(s.status).toBe("pending");
-    });
+  it("restore: skipped -> pending", () => {
+    const s = reduceIssue({ status: "skipped", phaseIndex: -1, round: 2 }, { type: "restore" }, ADV);
+    expect(s.status).toBe("pending");
+  });
 
-    it("restoring from any other state throws", () => {
-      const states: IssueState["status"][] = [
-        "pending",
-        "sp_voting",
-        "sp_revealed",
-        "dur_impl_voting",
-        "dur_impl_revealed",
-        "dur_review_voting",
-        "dur_review_revealed",
-        "dur_test_voting",
-        "dur_test_revealed",
-        "completed",
-      ];
-      for (const status of states) {
-        expect(() =>
-          reduceIssue({ status, round: 1, ...A }, { type: "restore" }),
-        ).toThrow();
-      }
-    });
+  it("restore from any other state throws", () => {
+    for (const status of ["pending", "voting", "revealed", "completed"] as const) {
+      expect(() => reduceIssue({ status, phaseIndex: -1, round: 1 }, { type: "restore" }, ADV)).toThrow();
+    }
   });
 
   it("invalid transitions throw", () => {
-    expect(() => reduceIssue({ status: "pending", round: 1, ...A }, { type: "reveal" })).toThrow();
-    expect(() => reduceIssue({ status: "sp_voting", round: 1, ...A }, { type: "submit" })).toThrow();
-  });
-
-  it("skip on a *_revealed state advances to next phase", () => {
-    let s: IssueState = { status: "dur_impl_revealed", round: 1, ...A };
-    s = reduceIssue(s, { type: "skipPhase" });
-    expect(s.status).toBe("dur_review_voting");
-  });
-
-  it("submit on last phase reveal goes to completed", () => {
-    let s: IssueState = { status: "dur_test_revealed", round: 1, ...A };
-    s = reduceIssue(s, { type: "submit" });
-    expect(s.status).toBe("completed");
+    expect(() => reduceIssue(pending, { type: "reveal" }, ADV)).toThrow();
+    expect(() => reduceIssue({ status: "voting", phaseIndex: -1, round: 1 }, { type: "submit" }, ADV)).toThrow();
   });
 
   describe("gotoPhase", () => {
-    it("jumps from completed back to sp_voting", () => {
-      const s = reduceIssue({ status: "completed", round: 1, ...A }, { type: "gotoPhase", target: "sp" });
-      expect(s).toEqual({ status: "sp_voting", round: 1, ...A });
+    it("jumps from completed back to SP (target -1)", () => {
+      const s = reduceIssue({ status: "completed", phaseIndex: 2, round: 1 }, { type: "gotoPhase", target: -1 }, ADV);
+      expect(s).toEqual({ status: "voting", phaseIndex: -1, round: 1 });
     });
-
-    it("jumps from dur_review_revealed back to sp_voting", () => {
-      const s = reduceIssue(
-        { status: "dur_review_revealed", round: 3, ...A },
-        { type: "gotoPhase", target: "sp" },
-      );
-      expect(s).toEqual({ status: "sp_voting", round: 1, ...A });
+    it("jumps from SP forward to phase index 2", () => {
+      const s = reduceIssue({ status: "voting", phaseIndex: -1, round: 1 }, { type: "gotoPhase", target: 2 }, ADV);
+      expect(s).toEqual({ status: "voting", phaseIndex: 2, round: 1 });
     });
-
-    it("jumps from sp_voting forward to dur_test_voting", () => {
-      const s = reduceIssue(
-        { status: "sp_voting", round: 1, ...A },
-        { type: "gotoPhase", target: "test" },
-      );
-      expect(s).toEqual({ status: "dur_test_voting", round: 1, ...A });
+    it("rejects gotoPhase from pending and skipped", () => {
+      expect(() => reduceIssue(pending, { type: "gotoPhase", target: -1 }, ADV)).toThrow();
+      expect(() => reduceIssue({ status: "skipped", phaseIndex: -1, round: 1 }, { type: "gotoPhase", target: -1 }, ADV)).toThrow();
     });
-
-    it("targets each destination correctly", () => {
-      const base: IssueState = { status: "completed", round: 1, ...A };
-      expect(reduceIssue(base, { type: "gotoPhase", target: "impl" }).status).toBe("dur_impl_voting");
-      expect(reduceIssue(base, { type: "gotoPhase", target: "review" }).status).toBe("dur_review_voting");
-      expect(reduceIssue(base, { type: "gotoPhase", target: "test" }).status).toBe("dur_test_voting");
+    it("rejects a target beyond the phase list", () => {
+      expect(() => reduceIssue({ status: "completed", phaseIndex: 0, round: 1 }, { type: "gotoPhase", target: 3 }, SIMPLE)).toThrow();
     });
+  });
 
-    it("rejects gotoPhase from pending", () => {
-      expect(() =>
-        reduceIssue({ status: "pending", round: 1, ...A }, { type: "gotoPhase", target: "sp" }),
-      ).toThrow();
+  describe("phaseInfo", () => {
+    it("SP -> sp/null", () => {
+      expect(phaseInfo({ status: "voting", phaseIndex: -1 }, ADV)).toEqual({ kind: "sp", phaseId: null });
     });
-
-    it("rejects gotoPhase from skipped", () => {
-      expect(() =>
-        reduceIssue({ status: "skipped", round: 1, ...A }, { type: "gotoPhase", target: "sp" }),
-      ).toThrow();
+    it("duration phase -> duration/id", () => {
+      expect(phaseInfo({ status: "revealed", phaseIndex: 1 }, ADV)).toEqual({ kind: "duration", phaseId: "review" });
+    });
+    it("non-voting -> null/null", () => {
+      expect(phaseInfo({ status: "completed", phaseIndex: 2 }, ADV)).toEqual({ kind: null, phaseId: null });
     });
   });
 });

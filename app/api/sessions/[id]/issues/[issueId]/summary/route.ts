@@ -13,16 +13,15 @@ export async function GET(
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const summary = await gatherSummary(issueId);
-  const phases = [summary.duration.impl, summary.duration.review, summary.duration.test];
-  const anyPhaseFinal = phases.some((p) => !p.skipped && p.final !== null);
-  const total = anyPhaseFinal ? phases.reduce((s, p) => s + (p.final ?? 0), 0) : null;
+  const durSummaries = summary.phases.map((p) => p.summary);
+  const anyPhaseFinal = durSummaries.some((p) => !p.skipped && p.final !== null);
+  const total = anyPhaseFinal ? durSummaries.reduce((s, p) => s + (p.final ?? 0), 0) : null;
   return NextResponse.json({
     sp: summary.sp.skipped ? null : summary.sp.final,
     durationTotal: total,
-    perPhase: {
-      impl: summary.duration.impl.skipped ? null : summary.duration.impl.final,
-      review: summary.duration.review.skipped ? null : summary.duration.review.final,
-      test: summary.duration.test.skipped ? null : summary.duration.test.final,
-    },
+    perPhase: summary.phases.map((p) => ({
+      name: p.name,
+      value: p.summary.skipped ? null : p.summary.final,
+    })),
   });
 }

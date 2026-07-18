@@ -5,6 +5,7 @@ import { db } from "@/lib/db/client";
 import { sessions, sessionMembers, users } from "@/lib/db/schema";
 import { getRoomSnapshot, joinSession } from "@/lib/poker/service";
 import { env } from "@/lib/env";
+import type { Phase } from "@/lib/poker/state-machine";
 import { RoomClient } from "./room.client";
 import { VoterPicker, type Candidate } from "@/components/poker/voter-picker";
 
@@ -36,6 +37,7 @@ export default async function RoomPage({
         youtrackBaseUrl={session.workspaceBaseUrl || env.YT_BASE_URL || ""}
         userDefaultMode={(user.defaultPokerMode as "simple" | "advanced" | null) ?? "advanced"}
         userDefaultWithEstimation={user.defaultWithEstimation ?? true}
+        userDefaultPhases={user.defaultPhases as Phase[] | null}
       />
     );
   }

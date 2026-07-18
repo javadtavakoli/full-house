@@ -20,6 +20,18 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
+type Phase = { id: string; name: string };
+
+function presetPhases(m: "simple" | "advanced"): Phase[] {
+  return m === "simple"
+    ? [{ id: "impl", name: "Estimation" }]
+    : [
+        { id: "impl", name: "Implementation" },
+        { id: "review", name: "Review" },
+        { id: "test", name: "Test" },
+      ];
+}
+
 export function PickIssueDialog({
   open,
   onOpenChange,
@@ -28,6 +40,7 @@ export function PickIssueDialog({
   issueKey,
   defaultMode,
   defaultWithEstimation,
+  defaultPhases,
   onDone,
 }: {
   open: boolean;
@@ -37,11 +50,15 @@ export function PickIssueDialog({
   issueKey: string;
   defaultMode: "simple" | "advanced";
   defaultWithEstimation: boolean;
+  defaultPhases?: Phase[];
   onDone: () => void;
 }) {
   const [mode, setMode] = useState<"simple" | "advanced">(defaultMode);
   const [withEstimation, setWithEstimation] =
     useState<boolean>(defaultWithEstimation);
+  const [phases, setPhases] = useState<Phase[]>(
+    defaultPhases ?? presetPhases(defaultMode),
+  );
   const [directMode, setDirectMode] = useState(false);
   const [sp, setSp] = useState("");
   const [dur, setDur] = useState("");
@@ -51,18 +68,24 @@ export function PickIssueDialog({
     if (open) {
       setMode(defaultMode);
       setWithEstimation(defaultWithEstimation);
+      setPhases(defaultPhases ?? presetPhases(defaultMode));
       setDirectMode(false);
       setSp("");
       setDur("");
     }
-  }, [open, defaultMode, defaultWithEstimation]);
+  }, [open, defaultMode, defaultWithEstimation, defaultPhases]);
 
   async function startVoting() {
     setPending(true);
     const r = await fetch(`/api/sessions/${sessionId}/pick-issue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issueId, mode, withEstimation }),
+      body: JSON.stringify({
+        issueId,
+        mode,
+        withEstimation,
+        phases: withEstimation ? phases : [],
+      }),
     });
     setPending(false);
     if (!r.ok) {
@@ -113,7 +136,11 @@ export function PickIssueDialog({
               <Label className="mb-1 block">Mode</Label>
               <Select
                 value={mode}
-                onValueChange={(v) => setMode(v as "simple" | "advanced")}
+                onValueChange={(v) => {
+                  const m = v as "simple" | "advanced";
+                  setMode(m);
+                  setPhases(presetPhases(m));
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -136,6 +163,88 @@ export function PickIssueDialog({
                 onCheckedChange={setWithEstimation}
               />
             </div>
+
+            {withEstimation && (
+              <div className="flex flex-col gap-2">
+                <Label className="block">
+                  Estimation phases (SP always runs first)
+                </Label>
+                {phases.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No phases — this issue will estimate SP only.
+                  </p>
+                )}
+                {phases.map((p, i) => (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <Input
+                      value={p.name}
+                      onChange={(e) =>
+                        setPhases((ps) =>
+                          ps.map((x) =>
+                            x.id === p.id ? { ...x, name: e.target.value } : x,
+                          ),
+                        )
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={i === 0}
+                      onClick={() =>
+                        setPhases((ps) => {
+                          const n = [...ps];
+                          [n[i - 1], n[i]] = [n[i]!, n[i - 1]!];
+                          return n;
+                        })
+                      }
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={i === phases.length - 1}
+                      onClick={() =>
+                        setPhases((ps) => {
+                          const n = [...ps];
+                          [n[i + 1], n[i]] = [n[i]!, n[i + 1]!];
+                          return n;
+                        })
+                      }
+                    >
+                      ↓
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setPhases((ps) => ps.filter((x) => x.id !== p.id))
+                      }
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  onClick={() =>
+                    setPhases((ps) => [
+                      ...ps,
+                      { id: crypto.randomUUID(), name: `Phase ${ps.length + 1}` },
+                    ])
+                  }
+                >
+                  Add phase
+                </Button>
+              </div>
+            )}
+
             <Button
               variant="link"
               className="self-start px-0"

@@ -24,19 +24,27 @@ describe("voting advanced", () => {
     const mod = await newUser("mod");
     const session = await createSession({ creatorUserId: mod.id, token: "t", boardId: "B1", sprintId: "S47", sprintName: "S47" });
     const [issue] = await testDb.select().from(issues).where(eq(issues.sessionId, session.id));
+    async function phaseIndexOf(id: string) {
+      const [row] = await testDb.select().from(issues).where(eq(issues.id, id));
+      return row!.phaseIndex;
+    }
+
     await pickIssue(session.id, issue!.id, mod.id);
     await castVote(session.id, issue!.id, mod.id, 5);
     await reveal(session.id, issue!.id, mod.id);
     let next = await submitFinal(session.id, issue!.id, mod.id, 5);
-    expect(next.status).toBe("dur_impl_voting");
+    expect(next.status).toBe("voting");
+    expect(await phaseIndexOf(issue!.id)).toBe(0); // impl
     await castVote(session.id, issue!.id, mod.id, 8);
     await reveal(session.id, issue!.id, mod.id);
     next = await submitFinal(session.id, issue!.id, mod.id, 8);
-    expect(next.status).toBe("dur_review_voting");
+    expect(next.status).toBe("voting");
+    expect(await phaseIndexOf(issue!.id)).toBe(1); // review
     await castVote(session.id, issue!.id, mod.id, 2);
     await reveal(session.id, issue!.id, mod.id);
     next = await submitFinal(session.id, issue!.id, mod.id, 2);
-    expect(next.status).toBe("dur_test_voting");
+    expect(next.status).toBe("voting");
+    expect(await phaseIndexOf(issue!.id)).toBe(2); // test
     await castVote(session.id, issue!.id, mod.id, 2);
     await reveal(session.id, issue!.id, mod.id);
     next = await submitFinal(session.id, issue!.id, mod.id, 2);
@@ -51,7 +59,8 @@ describe("voting advanced", () => {
     await castVote(session.id, issue!.id, mod.id, 3);
     await reveal(session.id, issue!.id, mod.id);
     const next = await startRevote(session.id, issue!.id, mod.id);
-    expect(next.status).toBe("sp_voting");
+    expect(next.status).toBe("voting");
+    expect(next.phaseIndex).toBe(-1);
 
     // a fresh estimate row should exist with round=2
     const rows = await testDb.select().from(estimates).where(eq(estimates.issueId, issue!.id)).orderBy(desc(estimates.round));
@@ -71,7 +80,8 @@ describe("voting advanced", () => {
     const [issue] = await testDb.select().from(issues).where(eq(issues.sessionId, session.id));
     await pickIssue(session.id, issue!.id, mod.id);
     const next = await skipPhase(session.id, issue!.id, mod.id);
-    expect(next.status).toBe("dur_impl_voting");
+    expect(next.status).toBe("voting");
+    expect(next.phaseIndex).toBe(0); // impl
     // Filter to this issue's sp estimate only — single-fork tests share the DB
     const spEstimate = await testDb
       .select()

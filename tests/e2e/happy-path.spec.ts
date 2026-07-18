@@ -79,7 +79,7 @@ test("happy path: mod + voter vote, reveal, submit, skip three duration phases, 
     await modPage.getByRole("button", { name: "Reveal votes" }).click();
   });
 
-  // 7. Submit 5 → enters dur_impl_voting.
+  // 7. Submit 5 → enters the impl duration phase (voting, phaseIndex 0).
   await postAndReload(modPage, sessionId, "submit", async () => {
     await modPage.getByRole("button", { name: /Submit 5/ }).click();
   });

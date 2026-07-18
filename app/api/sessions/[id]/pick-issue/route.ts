@@ -4,10 +4,12 @@ import { getServerUser } from "@/lib/auth/session";
 import { pickIssue } from "@/lib/poker/service";
 import { broadcastIssueChanged, broadcastPhaseChanged } from "@/lib/pusher/server";
 
+const PhaseSchema = z.object({ id: z.string(), name: z.string() });
 const Body = z.object({
   issueId: z.string().uuid(),
   mode: z.enum(["simple", "advanced"]).optional(),
   withEstimation: z.boolean().optional(),
+  phases: z.array(PhaseSchema).optional(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,6 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const next = await pickIssue(id, parsed.data.issueId, user.id, {
     mode: parsed.data.mode,
     withEstimation: parsed.data.withEstimation,
+    phases: parsed.data.phases,
   });
   await broadcastIssueChanged(id, parsed.data.issueId);
   await broadcastPhaseChanged(id, parsed.data.issueId, next.status, next.round);

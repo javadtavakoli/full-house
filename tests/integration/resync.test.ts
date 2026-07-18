@@ -108,7 +108,7 @@ describe("resyncIssuesFromYouTrack", () => {
       .where(and(eq(issues.sessionId, session.id), eq(issues.youtrackIssueId, "yt-1")));
 
     // Put FH-100 in flight: pick → cast a vote. Creates an estimate row + a vote
-    // row and moves the issue into sp_voting.
+    // row and moves the issue into voting (SP, phaseIndex -1).
     await pickIssue(session.id, issue!.id, mod.id);
     await castVote(session.id, issue!.id, mod.id, 5);
 
@@ -124,7 +124,7 @@ describe("resyncIssuesFromYouTrack", () => {
     // "unchanged" checks, so we assert the descriptive edit landed):
     expect(after!.summary).toBe("Foo EDITED");
     // Hard invariant: poker/voting state is untouched.
-    expect(after!.status).toBe(before!.status); // still sp_voting
+    expect(after!.status).toBe(before!.status); // still voting
     expect(after!.pokerMode).toBe(before!.pokerMode);
     expect(after!.withEstimation).toBe(before!.withEstimation);
     expect(after!.directEntry).toBe(before!.directEntry);
