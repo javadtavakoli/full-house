@@ -7,6 +7,16 @@ import { eq } from "drizzle-orm";
 const Body = z.object({
   moderatorYoutrackId: z.string(),
   voterYoutrackIds: z.array(z.string()).optional(),
+  candidates: z
+    .array(
+      z.object({
+        youtrackId: z.string(),
+        login: z.string(),
+        name: z.string(),
+        fullName: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 // Test-only seed: create a session directly in the DB with a hardcoded issue
@@ -32,6 +42,7 @@ export async function POST(req: Request) {
       boardId: "B1",
       sprintId: "S47",
       sprintName: "Sprint 47",
+      candidates: body.candidates ?? [],
     })
     .returning();
   if (!session) return NextResponse.json({ error: "session insert failed" }, { status: 500 });
