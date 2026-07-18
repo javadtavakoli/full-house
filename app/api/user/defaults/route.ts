@@ -3,9 +3,11 @@ import { z } from "zod";
 import { getServerUser } from "@/lib/auth/session";
 import { setUserDefaults } from "@/lib/poker/service";
 
+const PhaseSchema = z.object({ id: z.string(), name: z.string() });
 const Body = z.object({
   defaultPokerMode: z.enum(["simple", "advanced"]).nullable().optional(),
   defaultWithEstimation: z.boolean().nullable().optional(),
+  defaultPhases: z.array(PhaseSchema).nullable().optional(),
 });
 
 export async function GET() {
@@ -14,6 +16,7 @@ export async function GET() {
   return NextResponse.json({
     defaultPokerMode: user.defaultPokerMode,
     defaultWithEstimation: user.defaultWithEstimation,
+    defaultPhases: user.defaultPhases,
   });
 }
 
@@ -25,6 +28,7 @@ export async function POST(req: Request) {
   await setUserDefaults(user.id, {
     defaultPokerMode: parsed.data.defaultPokerMode,
     defaultWithEstimation: parsed.data.defaultWithEstimation,
+    defaultPhases: parsed.data.defaultPhases,
   });
   return NextResponse.json({ ok: true });
 }

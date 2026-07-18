@@ -6,7 +6,7 @@ import { broadcastPhaseChanged } from "@/lib/pusher/server";
 
 const Body = z.object({
   issueId: z.string().uuid(),
-  target: z.enum(["sp", "impl", "review", "test"]),
+  target: z.number().int().min(-1),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
