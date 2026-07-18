@@ -44,7 +44,6 @@ export function VoterPicker({
   }, [q, candidates]);
 
   async function pick(c: Candidate) {
-    if (claimed.has(c.youtrackId)) return;
     setError(null);
     setPending(c.youtrackId);
     const res = await signIn("voter", {
@@ -94,13 +93,9 @@ export function VoterPicker({
             <li key={c.youtrackId}>
               <button
                 type="button"
-                disabled={isClaimed || isPending || pending !== null}
+                disabled={isPending || pending !== null}
                 onClick={() => pick(c)}
-                className={`w-full flex items-center gap-3 border rounded px-3 py-2 text-left ${
-                  isClaimed
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:bg-accent"
-                }`}
+                className="w-full flex items-center gap-3 border rounded px-3 py-2 text-left hover:bg-accent disabled:opacity-60"
               >
                 <Avatar>
                   <AvatarFallback>{initials}</AvatarFallback>
@@ -109,9 +104,9 @@ export function VoterPicker({
                   <div className="text-sm font-medium">{displayName}</div>
                   <div className="text-xs text-muted-foreground">{c.login}</div>
                 </div>
-                {isClaimed && (
+                {isClaimed && !isPending && (
                   <span className="text-xs text-muted-foreground">
-                    already joined
+                    in room
                   </span>
                 )}
                 {isPending && (
