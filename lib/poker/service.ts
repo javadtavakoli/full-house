@@ -4,22 +4,34 @@ import { sessions, sessionMembers, issues, users, estimates, votes, youtrackPost
 import { youtrackApi } from "@/lib/youtrack/api";
 import { youtrackConfig } from "@/lib/youtrack/config";
 import { discoverConventions, type RawIssue } from "@/lib/youtrack/discover";
-import { reduceIssue, phaseOfStatus, type IssueState, type IssueStatus, type PokerMode } from "./state-machine";
+import {
+  reduceIssue,
+  phaseInfo,
+  derivePhases,
+  type Phase,
+  type IssueState,
+  type IssueStatus,
+  type PokerMode,
+} from "./state-machine";
 import { isValidCard } from "./decks";
 import type { SummaryInput } from "./comment-formatter";
 
-/**
- * Build the state machine input from a stored issue row. Null mode/withEstimation
- * come from legacy rows (pre-modes) and fall back to advanced + true so the
- * existing flow is preserved.
- */
+/** Build the state-machine input from a stored issue row. */
 function issueStateFrom(issue: typeof issues.$inferSelect, round: number): IssueState {
   return {
     status: issue.status as IssueStatus,
+    phaseIndex: issue.phaseIndex ?? -1,
     round,
-    mode: ((issue.pokerMode as PokerMode | null) ?? "advanced"),
-    withEstimation: issue.withEstimation ?? true,
   };
+}
+
+/**
+ * Resolve the issue's ordered duration phase list. Prefer the snapshot taken at
+ * pick time; fall back to the preset deriver for legacy rows with null phases.
+ */
+function resolvePhases(issue: typeof issues.$inferSelect): Phase[] {
+  if (issue.phases) return issue.phases as Phase[];
+  return derivePhases(issue.pokerMode as PokerMode | null, issue.withEstimation);
 }
 
 export const SPRINT_ISSUES_FIELDS =
@@ -189,7 +201,7 @@ export async function pickIssue(
   sessionId: string,
   issueId: string,
   moderatorUserId: string,
-  opts?: { mode?: PokerMode; withEstimation?: boolean },
+  opts?: { mode?: PokerMode; withEstimation?: boolean; phases?: Phase[] },
 ) {
   return db.transaction(async (tx) => {
     await assertModerator(tx, sessionId, moderatorUserId);
@@ -204,22 +216,25 @@ export async function pickIssue(
     if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
     if (issue.status !== "pending") throw new Error(`issue is ${issue.status}`);
 
-    // Resolve mode/withEstimation: opts > moderator's stored defaults > built-in fallback
+    // Resolve mode/withEstimation for the comment/back-compat snapshot.
     const [mod] = await tx.select().from(users).where(eq(users.id, moderatorUserId)).limit(1);
     const mode: PokerMode = opts?.mode ?? (mod?.defaultPokerMode as PokerMode | null) ?? "advanced";
     const withEstimation: boolean =
       opts?.withEstimation ?? mod?.defaultWithEstimation ?? true;
 
+    // Resolve the concrete phase list that drives the state machine:
+    //   explicit opts.phases > moderator's defaultPhases > preset deriver.
+    const phases: Phase[] =
+      opts?.phases ??
+      ((mod?.defaultPhases as Phase[] | null) && withEstimation
+        ? (mod!.defaultPhases as Phase[])
+        : derivePhases(mode, withEstimation));
+
+    const next = reduceIssue(issueStateFrom(issue, 1), { type: "pick" }, phases);
     await tx
       .update(issues)
-      .set({ pokerMode: mode, withEstimation })
+      .set({ pokerMode: mode, withEstimation, phases, phaseIndex: next.phaseIndex, status: next.status })
       .where(eq(issues.id, issueId));
-
-    const next = reduceIssue(
-      { status: issue.status as IssueStatus, round: 1, mode, withEstimation },
-      { type: "pick" },
-    );
-    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     await tx.insert(estimates).values({ issueId, kind: "sp", phase: null, round: 1 });
     return next;
   });
@@ -284,12 +299,17 @@ export async function enterDirectly(
  */
 export async function setUserDefaults(
   userId: string,
-  opts: { defaultPokerMode?: PokerMode | null; defaultWithEstimation?: boolean | null },
+  opts: {
+    defaultPokerMode?: PokerMode | null;
+    defaultWithEstimation?: boolean | null;
+    defaultPhases?: Phase[] | null;
+  },
 ) {
   const set: Record<string, unknown> = {};
   if (opts.defaultPokerMode !== undefined) set.defaultPokerMode = opts.defaultPokerMode;
   if (opts.defaultWithEstimation !== undefined)
     set.defaultWithEstimation = opts.defaultWithEstimation;
+  if (opts.defaultPhases !== undefined) set.defaultPhases = opts.defaultPhases;
   if (Object.keys(set).length === 0) return;
   await db.update(users).set(set).where(eq(users.id, userId));
 }
@@ -331,9 +351,9 @@ export async function castVote(
     await assertMember(tx, sessionId, userId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue || issue.sessionId !== sessionId) throw new Error("issue not in session");
-    const { kind } = phaseOfStatus(issue.status as IssueStatus);
+    const { kind } = phaseInfo(issueStateFrom(issue, 1), resolvePhases(issue));
     if (!kind) throw new Error("not in a voting phase");
-    if (!issue.status.endsWith("_voting")) throw new Error(`cannot vote in ${issue.status}`);
+    if (issue.status !== "voting") throw new Error(`cannot vote in ${issue.status}`);
     if (value !== null && !isValidCard(value, kind)) throw new Error(`invalid ${kind} card: ${value}`);
 
     const current = await currentEstimate(tx, issueId);
@@ -355,8 +375,8 @@ export async function reveal(sessionId: string, issueId: string, moderatorUserId
     await assertModerator(tx, sessionId, moderatorUserId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue) throw new Error("issue not found");
-    const next = reduceIssue(issueStateFrom(issue, 1), { type: "reveal" });
-    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+    const next = reduceIssue(issueStateFrom(issue, 1), { type: "reveal" }, resolvePhases(issue));
+    await tx.update(issues).set({ status: next.status, phaseIndex: next.phaseIndex }).where(eq(issues.id, issueId));
     return next;
   });
 }
@@ -386,7 +406,7 @@ async function currentEstimate(tx: Tx, issueId: string) {
   // the largest random UUID. Within a single phase, the highest round wins.
   const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
   if (!issue) return null;
-  const { kind, phase } = phaseOfStatus(issue.status as IssueStatus);
+  const { kind, phaseId } = phaseInfo(issueStateFrom(issue, 1), resolvePhases(issue));
   if (!kind) {
     // No active phase (pending/completed/skipped) — fall back to the highest
     // round across all estimate rows, for callers that still want the most
@@ -399,7 +419,7 @@ async function currentEstimate(tx: Tx, issueId: string) {
       .limit(1);
     return row ?? null;
   }
-  const phaseCond = phase === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phase);
+  const phaseCond = phaseId === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phaseId);
   const [row] = await tx
     .select()
     .from(estimates)
@@ -446,7 +466,7 @@ async function nextRoundFor(
   tx: Tx,
   issueId: string,
   kind: "sp" | "duration",
-  phase: "impl" | "review" | "test" | null,
+  phase: string | null,
 ): Promise<number> {
   const phaseCond = phase === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phase);
   const [highest] = await tx
@@ -463,7 +483,7 @@ export async function submitFinal(sessionId: string, issueId: string, moderatorU
     await assertModerator(tx, sessionId, moderatorUserId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue) throw new Error("issue not found");
-    if (!issue.status.endsWith("_revealed")) {
+    if (issue.status !== "revealed") {
       // Idempotency: if the most recently decided estimate for this issue was decided
       // within the last 5 seconds, this is a duplicate submit (e.g., double-click or
       // a retry that raced the broadcast). Silently succeed instead of 500-ing.
@@ -486,16 +506,16 @@ export async function submitFinal(sessionId: string, issueId: string, moderatorU
       .set({ finalValue: String(finalValue), decidedBy: moderatorUserId, decidedAt: new Date() })
       .where(eq(estimates.id, current.id));
 
-    const next = reduceIssue(issueStateFrom(issue, current.round), { type: "submit" });
-    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+    const next = reduceIssue(issueStateFrom(issue, current.round), { type: "submit" }, resolvePhases(issue));
+    await tx.update(issues).set({ status: next.status, phaseIndex: next.phaseIndex }).where(eq(issues.id, issueId));
 
     // Open the next estimate row if we advanced into a voting state.
     // Use highest-existing-round + 1 so a re-advance after `gotoPhase` doesn't
     // collide with the prior pass's round-1 row.
-    const phase = phaseOfStatus(next.status);
-    if (phase.kind && next.status.endsWith("_voting")) {
-      const round = await nextRoundFor(tx, issueId, phase.kind, phase.phase);
-      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round });
+    const info = phaseInfo(next, resolvePhases(issue));
+    if (info.kind && next.status === "voting") {
+      const round = await nextRoundFor(tx, issueId, info.kind, info.phaseId);
+      await tx.insert(estimates).values({ issueId, kind: info.kind, phase: info.phaseId, round });
     }
     return next;
   });
@@ -513,12 +533,13 @@ export async function skipPhase(sessionId: string, issueId: string, moderatorUse
         .set({ finalValue: null, decidedBy: moderatorUserId, decidedAt: new Date() })
         .where(eq(estimates.id, current.id));
     }
-    const next = reduceIssue(issueStateFrom(issue, current?.round ?? 1), { type: "skipPhase" });
-    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
-    const phase = phaseOfStatus(next.status);
-    if (phase.kind && next.status.endsWith("_voting")) {
-      const round = await nextRoundFor(tx, issueId, phase.kind, phase.phase);
-      await tx.insert(estimates).values({ issueId, kind: phase.kind, phase: phase.phase, round });
+    const phases = resolvePhases(issue);
+    const next = reduceIssue(issueStateFrom(issue, current?.round ?? 1), { type: "skipPhase" }, phases);
+    await tx.update(issues).set({ status: next.status, phaseIndex: next.phaseIndex }).where(eq(issues.id, issueId));
+    const info = phaseInfo(next, phases);
+    if (info.kind && next.status === "voting") {
+      const round = await nextRoundFor(tx, issueId, info.kind, info.phaseId);
+      await tx.insert(estimates).values({ issueId, kind: info.kind, phase: info.phaseId, round });
     }
     return next;
   });
@@ -529,7 +550,7 @@ export async function skipIssue(sessionId: string, issueId: string, moderatorUse
     await assertModerator(tx, sessionId, moderatorUserId);
     const [issue] = await tx.select().from(issues).where(eq(issues.id, issueId)).limit(1);
     if (!issue) throw new Error("issue not found");
-    const next = reduceIssue(issueStateFrom(issue, 1), { type: "skipIssue" });
+    const next = reduceIssue(issueStateFrom(issue, 1), { type: "skipIssue" }, resolvePhases(issue));
     await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
     return next;
   });
@@ -551,7 +572,7 @@ export async function restoreIssue(sessionId: string, issueId: string, moderator
     // subsequent `pick → vote round 1` collides with the pre-skip round-1 row
     // and `gatherSummary` (strict-greater on round) may read the stale row.
     await tx.delete(estimates).where(eq(estimates.issueId, issueId));
-    await tx.update(issues).set({ status: "pending" }).where(eq(issues.id, issueId));
+    await tx.update(issues).set({ status: "pending", phaseIndex: null }).where(eq(issues.id, issueId));
     return { status: "pending" as const, round: 1 };
   });
 }
@@ -563,8 +584,8 @@ export async function startRevote(sessionId: string, issueId: string, moderatorU
     if (!issue) throw new Error("issue not found");
     const current = await currentEstimate(tx, issueId);
     if (!current) throw new Error("no current estimate");
-    const next = reduceIssue(issueStateFrom(issue, current.round), { type: "revote" });
-    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+    const next = reduceIssue(issueStateFrom(issue, current.round), { type: "revote" }, resolvePhases(issue));
+    await tx.update(issues).set({ status: next.status, phaseIndex: next.phaseIndex }).where(eq(issues.id, issueId));
     // open a new estimate row at round+1
     await tx.insert(estimates).values({
       issueId, kind: current.kind, phase: current.phase, round: current.round + 1,
@@ -577,7 +598,7 @@ export async function gotoPhase(
   sessionId: string,
   issueId: string,
   moderatorUserId: string,
-  target: "sp" | "impl" | "review" | "test",
+  target: number, // -1 = SP, 0..n-1 = duration phase index
 ) {
   return db.transaction(async (tx) => {
     await assertModerator(tx, sessionId, moderatorUserId);
@@ -593,23 +614,14 @@ export async function gotoPhase(
       throw new Error("another issue is already in progress; finish or skip it first");
     }
 
-    const next = reduceIssue(
-      issueStateFrom(issue, 1),
-      { type: "gotoPhase", target },
-    );
-    await tx.update(issues).set({ status: next.status }).where(eq(issues.id, issueId));
+    const phases = resolvePhases(issue);
+    const next = reduceIssue(issueStateFrom(issue, 1), { type: "gotoPhase", target }, phases);
+    await tx.update(issues).set({ status: next.status, phaseIndex: next.phaseIndex }).where(eq(issues.id, issueId));
 
-    // Destination (kind, phase)
-    const targetKind = target === "sp" ? "sp" : "duration";
-    const targetPhase: "impl" | "review" | "test" | null = target === "sp" ? null : target;
-
-    const newRound = await nextRoundFor(tx, issueId, targetKind, targetPhase);
-    await tx.insert(estimates).values({
-      issueId,
-      kind: targetKind,
-      phase: targetPhase,
-      round: newRound,
-    });
+    const targetKind: "sp" | "duration" = target < 0 ? "sp" : "duration";
+    const targetPhaseId: string | null = target < 0 ? null : phases[target]!.id;
+    const newRound = await nextRoundFor(tx, issueId, targetKind, targetPhaseId);
+    await tx.insert(estimates).values({ issueId, kind: targetKind, phase: targetPhaseId, round: newRound });
 
     return { status: next.status, round: newRound };
   });
@@ -661,6 +673,7 @@ export type RoomSnapshot = {
     // Post-reveal: value is a number, or `null` when the voter abstained.
     votes: Array<{ userId: string; value?: number | null }>;
     isRevealed: boolean;
+    phaseIndex: number;
   } | null;
 };
 
@@ -670,8 +683,11 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
   const active = view.issues.find((i) => !["pending", "completed", "skipped"].includes(i.status));
   let activeIssue: RoomSnapshot["activeIssue"] = null;
   if (active) {
-    const { kind, phase } = phaseOfStatus(active.status as IssueStatus);
-    const phaseCond = phase === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phase);
+    const { kind, phaseId } = phaseInfo(
+      { status: active.status as IssueStatus, phaseIndex: active.phaseIndex ?? -1 },
+      resolvePhases(active),
+    );
+    const phaseCond = phaseId === null ? sql`${estimates.phase} IS NULL` : eq(estimates.phase, phaseId);
     const whereExpr = kind
       ? and(eq(estimates.issueId, active.id), eq(estimates.kind, kind), phaseCond)
       : eq(estimates.issueId, active.id);
@@ -682,7 +698,7 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
       .orderBy(desc(estimates.round), desc(estimates.id))
       .limit(1);
     if (current) {
-      const isRevealed = active.status.endsWith("_revealed");
+      const isRevealed = active.status === "revealed";
       const voteRows = await db
         .select({ userId: votes.userId, value: votes.value })
         .from(votes)
@@ -697,6 +713,7 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
             }))
           : voteRows.map((v) => ({ userId: v.userId })),
         isRevealed,
+        phaseIndex: active.phaseIndex ?? -1,
       };
     }
   }
