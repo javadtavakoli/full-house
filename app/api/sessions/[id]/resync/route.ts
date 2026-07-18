@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerUser, getYoutrackContext } from "@/lib/auth/session";
 import { resyncIssuesFromYouTrack } from "@/lib/poker/resync";
+import { broadcastIssueChanged } from "@/lib/pusher/server";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,6 +15,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const result = await resyncIssuesFromYouTrack(id, user.id, ctx.token);
+    // Resync spans the whole issue set; the payload issueId is unused by the
+    // client (it re-pulls the full snapshot on any issue-changed event).
+    await broadcastIssueChanged(id, "");
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
