@@ -104,3 +104,22 @@ export function isVotingStatus(s: IssueStatus): boolean {
 export function isRevealedStatus(s: IssueStatus): boolean {
   return s === "revealed";
 }
+
+/**
+ * Backward-compat deriver: the concrete phase list for an issue that has no
+ * snapshotted `phases` (legacy rows) OR for resolving a moderator preset.
+ *
+ * INVARIANT: preset phase ids ("impl","review","test") match every existing
+ * estimates.phase value. Never change them — doing so detaches historical
+ * estimates from their phase. See Invariant #3.
+ */
+export function derivePhases(pokerMode: PokerMode | null, withEstimation: boolean | null): Phase[] {
+  if (withEstimation === false) return [];
+  const mode = pokerMode ?? "advanced";
+  if (mode === "simple") return [{ id: "impl", name: "Estimation" }];
+  return [
+    { id: "impl", name: "Implementation" },
+    { id: "review", name: "Review" },
+    { id: "test", name: "Test" },
+  ];
+}
