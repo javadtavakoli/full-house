@@ -48,6 +48,7 @@ export function UserSettingsDialog({
 }) {
   const [mode, setMode] = useState<"simple" | "advanced">("advanced");
   const [withEstimation, setWithEstimation] = useState<boolean>(true);
+  const [phases, setPhases] = useState<{ id: string; name: string }[]>([]);
   const [pending, setPending] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -69,9 +70,23 @@ export function UserSettingsDialog({
         const j = (await r.json()) as {
           defaultPokerMode: "simple" | "advanced" | null;
           defaultWithEstimation: boolean | null;
+          defaultPhases: { id: string; name: string }[] | null;
         };
         setMode(j.defaultPokerMode ?? "advanced");
         setWithEstimation(j.defaultWithEstimation ?? true);
+        const dp = j.defaultPhases as { id: string; name: string }[] | null;
+        setPhases(
+          dp ??
+            (j.defaultWithEstimation === false
+              ? []
+              : (j.defaultPokerMode ?? "advanced") === "simple"
+                ? [{ id: "impl", name: "Estimation" }]
+                : [
+                    { id: "impl", name: "Implementation" },
+                    { id: "review", name: "Review" },
+                    { id: "test", name: "Test" },
+                  ]),
+        );
       }
       await loadEncryption();
       setLoaded(true);
@@ -86,6 +101,7 @@ export function UserSettingsDialog({
       body: JSON.stringify({
         defaultPokerMode: mode,
         defaultWithEstimation: withEstimation,
+        defaultPhases: withEstimation ? phases : [],
       }),
     });
     setPending(false);
@@ -132,6 +148,82 @@ export function UserSettingsDialog({
                 disabled={!loaded}
               />
             </div>
+
+            {withEstimation && (
+              <div className="flex flex-col gap-2">
+                <Label className="block">Estimation phases (SP always runs first)</Label>
+                {phases.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No phases — issues will estimate SP only.
+                  </p>
+                )}
+                {phases.map((p, i) => (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <Input
+                      value={p.name}
+                      onChange={(e) =>
+                        setPhases((ps) =>
+                          ps.map((x) => (x.id === p.id ? { ...x, name: e.target.value } : x)),
+                        )
+                      }
+                      disabled={!loaded}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={i === 0}
+                      onClick={() =>
+                        setPhases((ps) => {
+                          const n = [...ps];
+                          [n[i - 1], n[i]] = [n[i]!, n[i - 1]!];
+                          return n;
+                        })
+                      }
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={i === phases.length - 1}
+                      onClick={() =>
+                        setPhases((ps) => {
+                          const n = [...ps];
+                          [n[i + 1], n[i]] = [n[i]!, n[i + 1]!];
+                          return n;
+                        })
+                      }
+                    >
+                      ↓
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPhases((ps) => ps.filter((x) => x.id !== p.id))}
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  onClick={() =>
+                    setPhases((ps) => [
+                      ...ps,
+                      { id: crypto.randomUUID(), name: `Phase ${ps.length + 1}` },
+                    ])
+                  }
+                >
+                  Add phase
+                </Button>
+              </div>
+            )}
 
             <div className="border-t pt-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
