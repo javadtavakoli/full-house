@@ -363,6 +363,23 @@ export async function reveal(sessionId: string, issueId: string, moderatorUserId
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/**
+ * Shared private helper for moderator checks. Throws "moderator only" if the
+ * user is not a moderator of the session.
+ */
+async function checkModerator(
+  exec: typeof db | Tx,
+  sessionId: string,
+  userId: string,
+): Promise<void> {
+  const [m] = await exec
+    .select()
+    .from(sessionMembers)
+    .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, userId)))
+    .limit(1);
+  if (!m || m.role !== "moderator") throw new Error("moderator only");
+}
+
 async function currentEstimate(tx: Tx, issueId: string) {
   // Determine the active (kind, phase) from the issue's current status so we
   // pick the estimate row for the live phase, not whichever happens to have
@@ -401,13 +418,8 @@ async function assertMember(tx: Tx, sessionId: string, userId: string) {
   if (!m) throw new Error("not a member of this session");
 }
 
-async function assertModerator(tx: Tx, sessionId: string, userId: string) {
-  const [m] = await tx
-    .select()
-    .from(sessionMembers)
-    .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, userId)))
-    .limit(1);
-  if (!m || m.role !== "moderator") throw new Error("moderator only");
+async function assertModerator(tx: Tx, sessionId: string, userId: string): Promise<void> {
+  return checkModerator(tx, sessionId, userId);
 }
 
 /**
@@ -415,12 +427,7 @@ async function assertModerator(tx: Tx, sessionId: string, userId: string) {
  * service functions (e.g. resync). Throws "moderator only" for non-moderators.
  */
 export async function assertSessionModerator(sessionId: string, userId: string): Promise<void> {
-  const [m] = await db
-    .select()
-    .from(sessionMembers)
-    .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, userId)))
-    .limit(1);
-  if (!m || m.role !== "moderator") throw new Error("moderator only");
+  return checkModerator(db, sessionId, userId);
 }
 
 function notInState(states: string[]) {

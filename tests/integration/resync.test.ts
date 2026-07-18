@@ -3,7 +3,7 @@ import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
 import { testDb } from "./setup";
 import { handlers } from "./msw-handlers";
-import { users, sessions, sessionMembers, issues, estimates, votes } from "@/lib/db/schema";
+import { users, sessionMembers, issues, estimates, votes } from "@/lib/db/schema";
 import { createSession, pickIssue, castVote } from "@/lib/poker/service";
 import { resyncIssuesFromYouTrack } from "@/lib/poker/resync";
 import { and, eq } from "drizzle-orm";
