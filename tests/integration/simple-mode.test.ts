@@ -44,24 +44,28 @@ describe("simple poker mode", () => {
       mode: "simple",
       withEstimation: true,
     });
-    expect(picked.status).toBe("sp_voting");
+    expect(picked.status).toBe("voting");
+    expect(picked.phaseIndex).toBe(-1);
 
     await castVote(session.id, issue!.id, mod.id, 5);
     await reveal(session.id, issue!.id, mod.id);
     let next = await submitFinal(session.id, issue!.id, mod.id, 5);
-    expect(next.status).toBe("dur_impl_voting");
+    expect(next.status).toBe("voting");
+    const [row] = await testDb.select().from(issues).where(eq(issues.id, issue!.id));
+    expect(row!.phaseIndex).toBe(0);
 
     await castVote(session.id, issue!.id, mod.id, 8);
     await reveal(session.id, issue!.id, mod.id);
     next = await submitFinal(session.id, issue!.id, mod.id, 8);
-    // Simple-mode skips review and test — should go straight to completed
+    // Simple-mode has a single duration phase — should go straight to completed
     expect(next.status).toBe("completed");
 
+    // Simple mode's phase list is exactly one entry ("Estimation") — there is
+    // no separate review/test phase to skip.
     const summary = await gatherSummary(issue!.id);
-    expect(summary.mode).toBe("simple");
-    expect(summary.duration.impl.final).toBe(8);
-    expect(summary.duration.review.skipped).toBe(true);
-    expect(summary.duration.test.skipped).toBe(true);
+    expect(summary.phases.length).toBe(1);
+    expect(summary.phases[0]!.name).toBe("Estimation");
+    expect(summary.phases[0]!.summary.final).toBe(8);
 
     const comment = formatSummaryComment(summary);
     expect(comment).toContain("Story Points: 5");
@@ -89,8 +93,10 @@ describe("simple poker mode", () => {
     const next = await submitFinal(session.id, issue!.id, mod.id, 3);
     expect(next.status).toBe("completed");
 
+    // withEstimation=false → derivePhases returns an empty list, so no duration
+    // phases are gathered at all.
     const summary = await gatherSummary(issue!.id);
-    expect(summary.withEstimation).toBe(false);
+    expect(summary.phases.length).toBe(0);
     const comment = formatSummaryComment(summary);
     expect(comment).toContain("Story Points: 3");
     expect(comment).not.toContain("Duration");
@@ -120,7 +126,9 @@ describe("simple poker mode", () => {
     const summary = await gatherSummary(issue!.id);
     expect(summary.directEntry).toBe(true);
     expect(summary.sp.final).toBe(5);
-    expect(summary.duration.impl.final).toBe(12);
+    // No pickIssue was called, so the issue falls back to derivePhases(null, null)
+    // = advanced preset; the duration total is stored under the "impl" phase id.
+    expect(summary.phases[0]!.summary.final).toBe(12);
 
     const comment = formatSummaryComment(summary);
     expect(comment).toContain("Story Points: 5  (entered directly)");

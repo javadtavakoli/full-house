@@ -58,16 +58,20 @@ describe("gotoPhase", () => {
     const completed = await submitFinal(session.id, issue!.id, mod.id, 1); // test=1
     expect(completed.status).toBe("completed");
 
-    // Jump back to SP. Round must be 2 (highest prior + 1).
-    const backToSp = await gotoPhase(session.id, issue!.id, mod.id, "sp");
-    expect(backToSp.status).toBe("sp_voting");
+    // Jump back to SP (target -1). Round must be 2 (highest prior + 1).
+    const backToSp = await gotoPhase(session.id, issue!.id, mod.id, -1);
+    expect(backToSp.status).toBe("voting");
     expect(backToSp.round).toBe(2);
+    const [afterGoto] = await testDb.select().from(issues).where(eq(issues.id, issue!.id));
+    expect(afterGoto!.phaseIndex).toBe(-1);
 
     // Re-vote and submit a different SP.
     await castVote(session.id, issue!.id, mod.id, 13);
     await reveal(session.id, issue!.id, mod.id);
     const afterSp = await submitFinal(session.id, issue!.id, mod.id, 13);
-    expect(afterSp.status).toBe("dur_impl_voting");
+    expect(afterSp.status).toBe("voting");
+    const [afterSubmitSp] = await testDb.select().from(issues).where(eq(issues.id, issue!.id));
+    expect(afterSubmitSp!.phaseIndex).toBe(0); // impl
 
     // The duration-impl row opened by submitFinal must NOT collide with the prior
     // round-1 row (otherwise gatherSummary may read the stale finalValue). Round
@@ -103,9 +107,9 @@ describe("gotoPhase", () => {
 
     const summary = await gatherSummary(issue!.id);
     expect(summary.sp.final).toBe(13);
-    expect(summary.duration.impl.final).toBe(10);
-    expect(summary.duration.review.final).toBe(3);
-    expect(summary.duration.test.final).toBe(4);
+    expect(summary.phases[0]!.summary.final).toBe(10); // impl
+    expect(summary.phases[1]!.summary.final).toBe(3); // review
+    expect(summary.phases[2]!.summary.final).toBe(4); // test
   });
 
   it("rejects gotoPhase when another issue is already in flight", async () => {
@@ -143,6 +147,6 @@ describe("gotoPhase", () => {
     await pickIssue(session.id, second.id, mod.id);
 
     // Trying to reopen the first one while the second is active must throw.
-    await expect(gotoPhase(session.id, first.id, mod.id, "sp")).rejects.toThrow(/in progress/);
+    await expect(gotoPhase(session.id, first.id, mod.id, -1)).rejects.toThrow(/in progress/);
   });
 });
