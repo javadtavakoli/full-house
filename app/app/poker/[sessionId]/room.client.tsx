@@ -20,7 +20,7 @@ import {
 } from "@/components/poker/send-all-to-youtrack-dialog";
 import { SP_DECK } from "@/lib/poker/decks";
 import { suggestSp, suggestDuration } from "@/lib/poker/suggestion";
-import { phaseOfStatus } from "@/lib/poker/state-machine";
+import { derivePhases, type Phase } from "@/lib/poker/state-machine";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -41,6 +41,8 @@ type SnapshotIssue = {
   pokerMode: "simple" | "advanced" | null;
   withEstimation: boolean | null;
   directEntry: boolean;
+  phases: { id: string; name: string }[] | null;
+  phaseIndex: number | null;
 };
 
 type Snapshot = {
@@ -52,26 +54,27 @@ type Snapshot = {
     currentEstimate: { id: string; round: number; kind: "sp" | "duration"; phase: string | null };
     votes: Array<{ userId: string; value?: number | null }>;
     isRevealed: boolean;
+    phaseIndex: number;
   } | null;
 };
 
-// Options shown in the per-row "Back to…" select on completed issues.
-const BACK_TO_OPTIONS: Array<{ value: GotoTarget; label: string }> = [
-  { value: "sp", label: "Story points" },
-  { value: "impl", label: "Implementation" },
-  { value: "review", label: "Review" },
-  { value: "test", label: "Test" },
-];
+// Resolve a row's ordered duration-phase list: prefer the snapshot taken at
+// pick time; fall back to the preset deriver for legacy rows with null phases.
+// Mirrors the server's `resolvePhases` in lib/poker/service.ts.
+const resolveRowPhases = (i: SnapshotIssue): Phase[] =>
+  i.phases ?? derivePhases(i.pokerMode, i.withEstimation);
 
 export function RoomClient({
   initialSnapshot, currentUserId, youtrackBaseUrl,
   userDefaultMode = "advanced", userDefaultWithEstimation = true,
+  userDefaultPhases = null,
 }: {
   initialSnapshot: Snapshot;
   currentUserId: string;
   youtrackBaseUrl: string;
   userDefaultMode?: "simple" | "advanced";
   userDefaultWithEstimation?: boolean;
+  userDefaultPhases?: Phase[] | null;
 }) {
   const router = useRouter();
   const [snap, setSnap] = useState<Snapshot>(initialSnapshot);
@@ -93,8 +96,22 @@ export function RoomClient({
   })();
   const active = snap.activeIssue;
   const status = active?.issue.status ?? "pending";
-  const { kind, phase } = phaseOfStatus(status as never);
+  const kind = active?.currentEstimate.kind ?? null;
+  const activePhases = active ? resolveRowPhases(active.issue) : [];
+  const phaseName =
+    active && active.currentEstimate.phase
+      ? (activePhases.find((p) => p.id === active.currentEstimate.phase)?.name ?? "")
+      : "";
   const unit = kind === "duration" ? "h" : "";
+
+  // Real, memoized default phases for the PickIssueDialog + pickWithDefaults POST.
+  // MUST be reference-stable across re-renders (the ~20s snapshot poll) or it
+  // wipes the dialog's in-progress edits. Sourced from the real user.defaultPhases
+  // DB column, not derived only from mode.
+  const defaultPhases = useMemo(
+    () => userDefaultPhases ?? derivePhases(userDefaultMode, userDefaultWithEstimation),
+    [userDefaultPhases, userDefaultMode, userDefaultWithEstimation],
+  );
 
   const refresh = useCallback(async () => {
     const r = await fetch(`/api/sessions/${snap.session.id}`);
@@ -156,7 +173,7 @@ export function RoomClient({
   }, [isModerator, snap.session.id, refresh]);
 
   // reset card when active issue or phase changes
-  useEffect(() => { setMyCard(null); setAbstained(false); }, [active?.issue.id, status]);
+  useEffect(() => { setMyCard(null); setAbstained(false); }, [active?.issue.id, status, active?.phaseIndex]);
 
   const votedUserIds = useMemo(() => new Set((active?.votes ?? []).map((v) => v.userId)), [active]);
   const suggestion = useMemo(() => {
@@ -214,6 +231,9 @@ export function RoomClient({
       issueId,
       mode: userDefaultMode,
       withEstimation: userDefaultWithEstimation,
+      // Gate on withEstimation, mirroring PickIssueDialog's startVoting() —
+      // an explicit non-empty `phases` must never contradict withEstimation:false.
+      phases: userDefaultWithEstimation ? defaultPhases : [],
     });
   }
 
@@ -372,25 +392,15 @@ export function RoomClient({
                     {isModerator && i.status === "completed" && (
                       <Select
                         value=""
-                        onValueChange={(v) => gotoPhase(i.id, v as GotoTarget)}
+                        onValueChange={(v) => gotoPhase(i.id, Number(v))}
                       >
                         <SelectTrigger className="w-32 h-8 text-xs">
                           <SelectValue placeholder="Back to…" />
                         </SelectTrigger>
                         <SelectContent>
-                          {BACK_TO_OPTIONS.filter((t) => {
-                            // Simple-mode and SP-only issues should not expose
-                            // review/test as jump targets — those phases have no
-                            // meaning outside advanced + withEstimation.
-                            const mode = i.pokerMode ?? "advanced";
-                            const we = i.withEstimation ?? true;
-                            if (!we) return t.value === "sp";
-                            if (mode === "simple") return t.value === "sp" || t.value === "impl";
-                            return true;
-                          }).map((t) => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
-                            </SelectItem>
+                          <SelectItem value="-1">Story points</SelectItem>
+                          {resolveRowPhases(i).map((p, idx) => (
+                            <SelectItem key={p.id} value={String(idx)}>{p.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -405,11 +415,7 @@ export function RoomClient({
 
       {active && (
         <>
-          <PhaseStepper
-            status={status}
-            mode={active.issue.pokerMode ?? "advanced"}
-            withEstimation={active.issue.withEstimation ?? true}
-          />
+          <PhaseStepper phases={activePhases} phaseIndex={active.phaseIndex} status={status} />
           <IssueCard
             youtrackBaseUrl={youtrackBaseUrl}
             keyId={active.issue.issueKey}
@@ -433,7 +439,7 @@ export function RoomClient({
                   value={myCard}
                   onSubmit={vote}
                   disabled={false}
-                  phaseLabel={phase ?? ""}
+                  phaseLabel={phaseName}
                 />
               )}
               <Button
@@ -462,8 +468,8 @@ export function RoomClient({
               kind={kind}
               suggestion={suggestion}
               submitting={submitting}
-              mode={active.issue.pokerMode ?? "advanced"}
-              withEstimation={active.issue.withEstimation ?? true}
+              phases={activePhases}
+              phaseIndex={active.phaseIndex}
               onReveal={reveal}
               onSubmit={submit}
               onRevote={revote}
@@ -500,6 +506,7 @@ export function RoomClient({
           issueKey={pickDialogIssue.key}
           defaultMode={userDefaultMode}
           defaultWithEstimation={userDefaultWithEstimation}
+          defaultPhases={defaultPhases}
           onDone={() => { setPickDialogIssue(null); void refresh(); }}
         />
       )}

@@ -10,34 +10,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type GotoTarget = "sp" | "impl" | "review" | "test";
-
-const ALL_TARGETS: Array<{ value: GotoTarget; label: string }> = [
-  { value: "sp", label: "Story points" },
-  { value: "impl", label: "Implementation" },
-  { value: "review", label: "Review" },
-  { value: "test", label: "Test" },
-];
-
-/**
- * Map an issue's status to the "phase" it sits in, so we can hide that option
- * from the Back-to dropdown (going back to the current phase is what Revote does).
- */
-function activeTarget(status: string): GotoTarget | null {
-  if (status.startsWith("sp_")) return "sp";
-  if (status.startsWith("dur_impl")) return "impl";
-  if (status.startsWith("dur_review")) return "review";
-  if (status.startsWith("dur_test")) return "test";
-  return null;
-}
+export type GotoTarget = number;
 
 export function ModeratorControls({
   status,
   kind,
   suggestion,
   submitting = false,
-  mode = "advanced",
-  withEstimation = true,
+  phases,
+  phaseIndex,
   onReveal,
   onSubmit,
   onRevote,
@@ -50,8 +31,8 @@ export function ModeratorControls({
   kind: "sp" | "duration" | null;
   suggestion: number | null;
   submitting?: boolean;
-  mode?: "simple" | "advanced";
-  withEstimation?: boolean;
+  phases: { id: string; name: string }[];
+  phaseIndex: number;
   onReveal: () => void;
   onSubmit: (v: number) => void;
   onRevote: () => void;
@@ -65,19 +46,16 @@ export function ModeratorControls({
     setDraft(suggestion !== null ? String(suggestion) : "");
   }, [suggestion, status]);
 
-  const isVoting = status.endsWith("_voting");
-  const isRevealed = status.endsWith("_revealed");
+  const isVoting = status === "voting";
+  const isRevealed = status === "revealed";
 
-  const current = activeTarget(status);
-  // Hide the current phase from the dropdown — that's what Revote is for.
-  // Also hide targets the issue's mode/withEstimation doesn't reach: SP-only
-  // issues only allow "sp"; simple-mode issues only allow "sp" and "impl".
-  const available = ALL_TARGETS.filter((t) => {
-    if (t.value === current) return false;
-    if (!withEstimation) return t.value === "sp";
-    if (mode === "simple") return t.value === "sp" || t.value === "impl";
-    return true;
-  });
+  // Build the Back-to options from the phase list, hiding the current index —
+  // that's what Revote is for.
+  const targets: Array<{ value: number; label: string }> = [
+    { value: -1, label: "Story points" },
+    ...phases.map((p, i) => ({ value: i, label: p.name })),
+  ];
+  const available = targets.filter((t) => t.value !== phaseIndex);
 
   function submitDraft() {
     const n = Number(draft);
@@ -120,7 +98,7 @@ export function ModeratorControls({
       <Button variant="outline" onClick={onSkipIssue} disabled={submitting}>Skip issue</Button>
       <Select
         value=""
-        onValueChange={(v) => onGoto(v as GotoTarget)}
+        onValueChange={(v) => onGoto(Number(v))}
         disabled={submitting}
       >
         <SelectTrigger className="w-36 h-9" disabled={submitting}>
@@ -128,7 +106,7 @@ export function ModeratorControls({
         </SelectTrigger>
         <SelectContent>
           {available.map((t) => (
-            <SelectItem key={t.value} value={t.value}>
+            <SelectItem key={t.value} value={String(t.value)}>
               {t.label}
             </SelectItem>
           ))}
