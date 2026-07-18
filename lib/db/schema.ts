@@ -11,6 +11,9 @@ export const users = pgTable("users", {
   defaultPokerMode: text("default_poker_mode"), // 'simple' | 'advanced'
   // Moderator's preferred default for whether duration estimation runs. Null → fall back to true.
   defaultWithEstimation: boolean("default_with_estimation"),
+  // Moderator's preferred default phase list (ordered duration phases, SP excluded).
+  // Null → derive from defaultPokerMode + defaultWithEstimation via derivePhases.
+  defaultPhases: jsonb("default_phases"), // Array<{ id, name }> or null
   // The YouTrack login (username) — populated during signup from /users/me.
   // Used by /api/auth/lookup-encrypted to resolve a login to the encrypted-PAT
   // blob during a password-mode sign-in. Nullable on legacy rows that signed in
@@ -99,6 +102,13 @@ export const issues = pgTable(
     withEstimation: boolean("with_estimation"),
     // True when the moderator typed values without running a vote.
     directEntry: boolean("direct_entry").notNull().default(false),
+    // Snapshotted ordered duration phase list, captured at pick time so mid-session
+    // default changes never alter an in-flight issue. Null on legacy rows → derive
+    // from pokerMode + withEstimation.
+    phases: jsonb("phases"), // Array<{ id, name }> or null
+    // Active phase pointer: -1 = SP, 0..phases.length-1 = duration phase.
+    // Null on legacy rows → treated as -1 (SP).
+    phaseIndex: integer("phase_index"),
   },
   (t) => ({
     uniqInSession: uniqueIndex("issues_session_yt_uniq").on(t.sessionId, t.youtrackIssueId),
