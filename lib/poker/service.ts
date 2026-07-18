@@ -22,7 +22,7 @@ function issueStateFrom(issue: typeof issues.$inferSelect, round: number): Issue
   };
 }
 
-const SPRINT_ISSUES_FIELDS =
+export const SPRINT_ISSUES_FIELDS =
   "issues(id,idReadable,summary,description,customFields(name,projectCustomField(field(fieldType(id))),value(name,isResolved)))";
 
 export async function createSession(opts: {
@@ -403,6 +403,19 @@ async function assertMember(tx: Tx, sessionId: string, userId: string) {
 
 async function assertModerator(tx: Tx, sessionId: string, userId: string) {
   const [m] = await tx
+    .select()
+    .from(sessionMembers)
+    .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, userId)))
+    .limit(1);
+  if (!m || m.role !== "moderator") throw new Error("moderator only");
+}
+
+/**
+ * Public, db-backed moderator gate for callers outside the transaction-scoped
+ * service functions (e.g. resync). Throws "moderator only" for non-moderators.
+ */
+export async function assertSessionModerator(sessionId: string, userId: string): Promise<void> {
+  const [m] = await db
     .select()
     .from(sessionMembers)
     .where(and(eq(sessionMembers.sessionId, sessionId), eq(sessionMembers.userId, userId)))
