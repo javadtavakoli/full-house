@@ -109,6 +109,10 @@ export const issues = pgTable(
     // Active phase pointer: -1 = SP, 0..phases.length-1 = duration phase.
     // Null on legacy rows → treated as -1 (SP).
     phaseIndex: integer("phase_index"),
+    // Values already on the YouTrack issue (SP field / duration field, hours),
+    // captured at session create + refreshed on resync. Display-only.
+    ytSp: numeric("yt_sp"),
+    ytDurationHours: numeric("yt_duration_hours"),
   },
   (t) => ({
     uniqInSession: uniqueIndex("issues_session_yt_uniq").on(t.sessionId, t.youtrackIssueId),

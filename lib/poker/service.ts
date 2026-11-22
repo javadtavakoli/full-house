@@ -4,6 +4,7 @@ import { sessions, sessionMembers, issues, users, estimates, votes, youtrackPost
 import { youtrackApi } from "@/lib/youtrack/api";
 import { youtrackConfig } from "@/lib/youtrack/config";
 import { discoverConventions, type RawIssue } from "@/lib/youtrack/discover";
+import { readYtEstimates, ytEstimateColumns } from "@/lib/youtrack/estimates";
 import {
   reduceIssue,
   phaseInfo,
@@ -35,7 +36,7 @@ function resolvePhases(issue: typeof issues.$inferSelect): Phase[] {
 }
 
 export const SPRINT_ISSUES_FIELDS =
-  "issues(id,idReadable,summary,description,customFields(name,projectCustomField(field(fieldType(id))),value(name,isResolved)))";
+  "issues(id,idReadable,summary,description,customFields(name,projectCustomField(field(fieldType(id))),value(name,isResolved,minutes)))";
 
 type RawUser = { id: string; login: string; name: string; fullName: string };
 
@@ -158,6 +159,7 @@ export async function createSession(opts: {
           summary: i.summary,
           description: i.description,
           position: idx,
+          ...ytEstimateColumns(readYtEstimates(i, conventions.spField, conventions.durationField)),
         })),
       );
     }
@@ -679,10 +681,17 @@ export async function endSession(sessionId: string, moderatorUserId: string) {
   });
 }
 
+/** This session's decided values for an issue (latest round per SP / phase). */
+export type IssueResult = {
+  sp: number | null;
+  durationHours: number | null;
+  phases: Array<{ name: string; hours: number }>;
+};
+
 export type RoomSnapshot = {
   session: typeof sessions.$inferSelect;
   members: Array<{ userId: string; role: string; displayName: string; avatarUrl: string | null; lastSeenAt: Date }>;
-  issues: Array<typeof issues.$inferSelect & { syncStatus: "ok" | "failed" | null }>;
+  issues: Array<typeof issues.$inferSelect & { syncStatus: "ok" | "failed" | null; result: IssueResult | null }>;
   activeIssue: {
     issue: typeof issues.$inferSelect;
     currentEstimate: typeof estimates.$inferSelect;
@@ -742,8 +751,52 @@ export async function getRoomSnapshot(sessionId: string): Promise<RoomSnapshot |
     if (p.status === "failed") byIssue.set(p.issueId, "failed");
     else if (!byIssue.has(p.issueId)) byIssue.set(p.issueId, "ok");
   }
-  const issuesWithSync = view.issues.map((i) => ({ ...i, syncStatus: byIssue.get(i.id) ?? null }));
+  const sessionEstimates = await db
+    .select({
+      issueId: estimates.issueId,
+      kind: estimates.kind,
+      phase: estimates.phase,
+      round: estimates.round,
+      finalValue: estimates.finalValue,
+    })
+    .from(estimates)
+    .innerJoin(issues, eq(issues.id, estimates.issueId))
+    .where(eq(issues.sessionId, sessionId));
+  const resultByIssue = buildIssueResults(view.issues, sessionEstimates);
+  const issuesWithSync = view.issues.map((i) => ({
+    ...i,
+    syncStatus: byIssue.get(i.id) ?? null,
+    result: resultByIssue.get(i.id) ?? null,
+  }));
   return { session: view.session, members: view.members, issues: issuesWithSync, activeIssue };
+}
+
+function buildIssueResults(
+  issueRows: Array<typeof issues.$inferSelect>,
+  rows: Array<{ issueId: string; kind: string; phase: string | null; round: number; finalValue: string | null }>,
+): Map<string, IssueResult> {
+  // Latest round per (issue, kind, phase) — same rule as gatherSummary/sync.
+  const latest = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    const key = `${r.issueId}|${r.kind}|${r.phase ?? ""}`;
+    const prev = latest.get(key);
+    if (!prev || r.round > prev.round) latest.set(key, r);
+  }
+  const out = new Map<string, IssueResult>();
+  for (const issue of issueRows) {
+    if (issue.status !== "completed") continue;
+    const final = (kind: string, phase: string | null) => {
+      const v = latest.get(`${issue.id}|${kind}|${phase ?? ""}`)?.finalValue;
+      return v === null || v === undefined ? null : Number(v);
+    };
+    const phases = resolvePhases(issue)
+      .map((p) => ({ name: p.name, hours: final("duration", p.id) }))
+      .filter((p): p is { name: string; hours: number } => p.hours !== null);
+    const sp = final("sp", null);
+    const durationHours = phases.length > 0 ? phases.reduce((s, p) => s + p.hours, 0) : null;
+    out.set(issue.id, { sp, durationHours, phases });
+  }
+  return out;
 }
 
 export async function gatherSummary(issueId: string): Promise<SummaryInput> {
