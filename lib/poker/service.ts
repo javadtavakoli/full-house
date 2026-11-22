@@ -37,6 +37,25 @@ function resolvePhases(issue: typeof issues.$inferSelect): Phase[] {
 export const SPRINT_ISSUES_FIELDS =
   "issues(id,idReadable,summary,description,customFields(name,projectCustomField(field(fieldType(id))),value(name,isResolved)))";
 
+type RawUser = { id: string; login: string; name: string; fullName: string };
+
+/**
+ * YouTrack collection endpoints are paginated and return only 42 items when
+ * `$top` is omitted, which silently dropped users from the voter picker in
+ * workspaces with more than 42 users. Page through until a short page.
+ */
+async function fetchAllUsers(yt: ReturnType<typeof youtrackApi>): Promise<RawUser[]> {
+  const PAGE = 500;
+  const all: RawUser[] = [];
+  for (let skip = 0; ; skip += PAGE) {
+    const page = ((await yt.request("GET", "/users", {
+      query: { fields: "id,login,name,fullName", $top: PAGE, $skip: skip },
+    })) ?? []) as RawUser[];
+    all.push(...page);
+    if (page.length < PAGE) return all;
+  }
+}
+
 export async function createSession(opts: {
   creatorUserId: string;
   token: string;
@@ -81,9 +100,7 @@ export async function createSession(opts: {
     yt.request("GET", `/agiles/${opts.boardId}/sprints/${opts.sprintId}`, {
       query: { fields: SPRINT_ISSUES_FIELDS },
     }) as Promise<{ issues?: RawIssue[] }>,
-    yt.request("GET", "/users", {
-      query: { fields: "id,login,name,fullName" },
-    }) as Promise<Array<{ id: string; login: string; name: string; fullName: string }>>,
+    fetchAllUsers(yt),
   ]);
 
   const candidates = (rawUsers ?? []).map((u) => ({
