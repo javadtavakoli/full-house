@@ -10,6 +10,7 @@ import { VoterList } from "@/components/poker/voter-list";
 import { RevealPanel } from "@/components/poker/reveal-panel";
 import { ModeratorControls, type GotoTarget } from "@/components/poker/moderator-controls";
 import { IssueCard } from "@/components/poker/issue-card";
+import { EstimateChips } from "@/components/poker/estimate-chips";
 import { RoundBadge } from "@/components/poker/round-badge";
 import { PhaseStepper } from "@/components/poker/phase-stepper";
 import { DurationInput } from "@/components/poker/duration-input";
@@ -43,7 +44,14 @@ type SnapshotIssue = {
   directEntry: boolean;
   phases: { id: string; name: string }[] | null;
   phaseIndex: number | null;
+  // Values currently on the YouTrack issue (numeric columns arrive as strings).
+  ytSp: string | number | null;
+  ytDurationHours: string | number | null;
+  // This session's decided values; only set for completed issues.
+  result: { sp: number | null; durationHours: number | null; phases: { name: string; hours: number }[] } | null;
 };
+
+const num = (v: string | number | null | undefined) => (v === null || v === undefined ? null : Number(v));
 
 type Snapshot = {
   session: { id: string; sprintName: string; createdBy: string; status: string };
@@ -321,10 +329,11 @@ export function RoomClient({
           )}
           <ul className="flex flex-col gap-1">
             {pending.map((i) => (
-              <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2 gap-2">
-                <span className="min-w-0 truncate">{i.issueKey} — {i.summary}</span>
+              <li key={i.id} className="flex flex-wrap sm:flex-nowrap items-center justify-between border rounded px-3 py-2 gap-2">
+                <span className="min-w-0 truncate basis-full sm:basis-auto sm:flex-1">{i.issueKey} — {i.summary}</span>
+                <EstimateChips sp={num(i.ytSp)} durationHours={num(i.ytDurationHours)} />
                 {isModerator && (
-                  <div className="flex items-stretch shrink-0">
+                  <div className="flex items-stretch shrink-0 ml-auto sm:ml-0">
                     <Button
                       size="sm"
                       onClick={() => pickWithDefaults(i.id)}
@@ -359,14 +368,29 @@ export function RoomClient({
             <h2 className="text-sm font-medium text-muted-foreground">Completed</h2>
             <ul className="flex flex-col gap-1">
               {completedAndSkipped.map((i) => (
-                <li key={i.id} className="flex items-center justify-between border rounded px-3 py-2 text-sm gap-2">
-                  <span className="opacity-70 min-w-0 truncate">
+                <li key={i.id} className="flex flex-wrap sm:flex-nowrap items-center justify-between border rounded px-3 py-2 text-sm gap-2">
+                  <span className="opacity-70 min-w-0 truncate basis-full sm:basis-auto sm:flex-1">
                     {i.issueKey} — {i.summary}{" "}
                     {i.status === "skipped" && (
                       <em className="text-xs text-muted-foreground">(skipped)</em>
                     )}
                   </span>
-                  <span className="flex items-center gap-2 shrink-0">
+                  {i.status === "completed" && i.result ? (
+                    <EstimateChips
+                      sp={i.result.sp}
+                      durationHours={i.result.durationHours}
+                      phases={i.result.phases}
+                      pending={i.syncStatus !== "ok"}
+                      pendingLabel={
+                        i.syncStatus === "failed"
+                          ? "Pending — last send to YouTrack failed"
+                          : "Pending — not sent to YouTrack yet"
+                      }
+                    />
+                  ) : (
+                    <EstimateChips sp={num(i.ytSp)} durationHours={num(i.ytDurationHours)} />
+                  )}
+                  <span className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
                     {/* Status badge */}
                     {i.status === "skipped" ? (
                       <span className="text-xs text-muted-foreground">skipped</span>

@@ -4,6 +4,7 @@ import { issues, sessions } from "@/lib/db/schema";
 import { youtrackApi } from "@/lib/youtrack/api";
 import { env } from "@/lib/env";
 import type { RawIssue } from "@/lib/youtrack/discover";
+import { readYtEstimates, ytEstimateColumns } from "@/lib/youtrack/estimates";
 import {
   assertSessionModerator,
   conventionsForSession,
@@ -14,7 +15,8 @@ export type ResyncResult = { updated: number; inserted: number };
 
 /**
  * Re-fetch the session's sprint issues with the moderator's token and reconcile
- * DESCRIPTIVE fields only (summary/description/position) into the local `issues`
+ * DESCRIPTIVE fields only (summary/description/position + the read-only YouTrack
+ * SP/duration values shown in the issue list) into the local `issues`
  * table:
  *   - UPDATE existing issues (matched by youtrackIssueId).
  *   - INSERT newly-added issues (status defaults to 'pending').
@@ -43,7 +45,7 @@ export async function resyncIssuesFromYouTrack(
   const baseUrl = session.workspaceBaseUrl || env.YT_BASE_URL;
   if (!baseUrl) throw new Error("session has no workspace URL");
 
-  const { doneStateNames } = conventionsForSession(session);
+  const { doneStateNames, spField, durationField } = conventionsForSession(session);
   const exclude = new Set(doneStateNames);
 
   const yt = youtrackApi(token, baseUrl);
@@ -74,12 +76,13 @@ export async function resyncIssuesFromYouTrack(
     let inserted = 0;
     for (let idx = 0; idx < ytIssues.length; idx++) {
       const i = ytIssues[idx]!;
+      const ytValues = ytEstimateColumns(readYtEstimates(i, spField, durationField));
       if (existingIds.has(i.id)) {
         // DESCRIPTIVE FIELDS ONLY. Never include status/pokerMode/withEstimation/
         // directEntry here — that limited SET is the structural invariant.
         await tx
           .update(issues)
-          .set({ summary: i.summary, description: i.description, position: idx })
+          .set({ summary: i.summary, description: i.description, position: idx, ...ytValues })
           .where(and(eq(issues.sessionId, sessionId), eq(issues.youtrackIssueId, i.id)));
         updated++;
       } else {
@@ -90,6 +93,7 @@ export async function resyncIssuesFromYouTrack(
           summary: i.summary,
           description: i.description,
           position: idx,
+          ...ytValues,
           // status defaults to 'pending' via the schema default.
         });
         inserted++;
